@@ -1,5 +1,11 @@
 # @backstage-community/plugin-copilot-common
 
+## 0.19.0
+
+### Minor Changes
+
+- 6cf8553: Backstage version bump to v1.51.0
+
 ## 0.18.0
 
 ### Minor Changes
