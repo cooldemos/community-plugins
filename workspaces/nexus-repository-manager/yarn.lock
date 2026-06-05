@@ -741,7 +741,7 @@ __metadata:
     "@backstage/test-utils": "npm:^1.7.17"
     "@backstage/theme": "npm:^0.7.3"
     "@backstage/ui": "npm:^0.14.3"
-    "@hey-api/openapi-ts": "npm:0.97.1"
+    "@hey-api/openapi-ts": "npm:0.98.1"
     "@material-ui/core": "npm:^4.9.13"
     "@playwright/test": "npm:^1.57.0"
     "@testing-library/dom": "npm:^10.4.1"
@@ -2941,36 +2941,36 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@hey-api/codegen-core@npm:0.8.1":
-  version: 0.8.1
-  resolution: "@hey-api/codegen-core@npm:0.8.1"
+"@hey-api/codegen-core@npm:0.8.4":
+  version: 0.8.4
+  resolution: "@hey-api/codegen-core@npm:0.8.4"
   dependencies:
     "@hey-api/types": "npm:0.1.4"
     ansi-colors: "npm:4.1.3"
     c12: "npm:3.3.4"
     color-support: "npm:1.1.3"
-  checksum: 10/5bbf9b36808daed4c19a7ce54810c7b978dd01aa91a884d7e2dfc99b91b8ba85e158bd24d90b14e242d929ce9f9dc4b701f8998cce89a58e6c871146d566ec87
+  checksum: 10/4078609167c428d31e49808de518ef4bb3b79ac25f9d4dd65fe22ffedd4639461bb09fd156aaa22a460e36516b48d4fb574e3d874fe93efbfe5b72532b1d9d60
   languageName: node
   linkType: hard
 
-"@hey-api/json-schema-ref-parser@npm:1.4.2":
-  version: 1.4.2
-  resolution: "@hey-api/json-schema-ref-parser@npm:1.4.2"
+"@hey-api/json-schema-ref-parser@npm:1.4.3":
+  version: 1.4.3
+  resolution: "@hey-api/json-schema-ref-parser@npm:1.4.3"
   dependencies:
     "@jsdevtools/ono": "npm:7.1.3"
     "@types/json-schema": "npm:7.0.15"
     js-yaml: "npm:4.1.1"
-  checksum: 10/9d8e7431961350cf38155d1df8e4aaa1bf491c6c9db1acf9c06a645270650752b220927f8581f21453ba79ed70ffad7955eca2b2e7a1253049233d8f0e316272
+  checksum: 10/0c7a9bcfe5afe5b6dbcefe4379e4e07b5c2acea74b0a6d8c1aa8bdae1a91e29d538a3305a828e782abc517205ec348feb36f2314a30b8b42d6528164a8d9f270
   languageName: node
   linkType: hard
 
-"@hey-api/openapi-ts@npm:0.97.1":
-  version: 0.97.1
-  resolution: "@hey-api/openapi-ts@npm:0.97.1"
+"@hey-api/openapi-ts@npm:0.98.1":
+  version: 0.98.1
+  resolution: "@hey-api/openapi-ts@npm:0.98.1"
   dependencies:
-    "@hey-api/codegen-core": "npm:0.8.1"
-    "@hey-api/json-schema-ref-parser": "npm:1.4.2"
-    "@hey-api/shared": "npm:0.4.3"
+    "@hey-api/codegen-core": "npm:0.8.4"
+    "@hey-api/json-schema-ref-parser": "npm:1.4.3"
+    "@hey-api/shared": "npm:0.4.7"
     "@hey-api/spec-types": "npm:0.2.0"
     "@hey-api/types": "npm:0.1.4"
     "@lukeed/ms": "npm:2.0.2"
@@ -2981,24 +2981,24 @@ __metadata:
   peerDependencies:
     typescript: ">=5.5.3 || >=6.0.0 || 6.0.1-rc"
   bin:
-    openapi-ts: bin/run.js
-  checksum: 10/143677c3a8d2e2b8e3d86f67b919b3de87793a85aae487b7bdef10468074b0777509aa498fc7950800f0f2bbff866d999ffd79d959687fd57462e5231e6de6e1
+    openapi-ts: ./bin/run.js
+  checksum: 10/9a8717284732738c34471202c723ded9fc0ebbb0fee5ba290fa55c242f23497033c1792acfe025341c0249443fe57b3a3537bf95eeffe4dbdec5806134b9f96b
   languageName: node
   linkType: hard
 
-"@hey-api/shared@npm:0.4.3":
-  version: 0.4.3
-  resolution: "@hey-api/shared@npm:0.4.3"
+"@hey-api/shared@npm:0.4.7":
+  version: 0.4.7
+  resolution: "@hey-api/shared@npm:0.4.7"
   dependencies:
-    "@hey-api/codegen-core": "npm:0.8.1"
-    "@hey-api/json-schema-ref-parser": "npm:1.4.2"
+    "@hey-api/codegen-core": "npm:0.8.4"
+    "@hey-api/json-schema-ref-parser": "npm:1.4.3"
     "@hey-api/spec-types": "npm:0.2.0"
     "@hey-api/types": "npm:0.1.4"
     ansi-colors: "npm:4.1.3"
     cross-spawn: "npm:7.0.6"
     open: "npm:11.0.0"
     semver: "npm:7.7.4"
-  checksum: 10/f3890c701e072525e8d9e9a4efbd853f99a563b2e52c924fea41102c6deb4a41bad24409866aede161419383435793ff8fd4355701225c7bf148adb2e4e03440
+  checksum: 10/09c03ca0ec9b78eeb78f9f7e83b69bcc90dfd4609476eb510b14b16ae63ce757fcdeb6e646d91615eb32c66667764c77df9183e1b98663da3e09e0dc0d9ccb7a
   languageName: node
   linkType: hard
 
