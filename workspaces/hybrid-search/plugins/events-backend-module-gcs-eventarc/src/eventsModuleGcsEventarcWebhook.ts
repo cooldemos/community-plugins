@@ -285,7 +285,7 @@ export const eventsModuleGcsEventarcWebhook = createBackendModule({
 
                     return {
                       id: docId,
-                      jsonData: JSON.stringify({
+                      structData: {
                         id: docId,
                         title: doc.title,
                         name: name,
@@ -293,7 +293,7 @@ export const eventsModuleGcsEventarcWebhook = createBackendModule({
                         kind: kind,
                         location: doc.location,
                         text: doc.text,
-                      }),
+                      },
                     };
                   });
 

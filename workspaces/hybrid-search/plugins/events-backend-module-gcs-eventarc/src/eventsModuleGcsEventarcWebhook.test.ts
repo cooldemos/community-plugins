@@ -297,10 +297,14 @@ describe('eventsModuleGcsEventarcWebhook', () => {
           inlineSource: {
             documents: expect.arrayContaining([
               expect.objectContaining({
-                jsonData: expect.stringContaining('page1.html'),
+                structData: expect.objectContaining({
+                  location: 'page1.html',
+                }),
               }),
               expect.objectContaining({
-                jsonData: expect.stringContaining('page2.html'),
+                structData: expect.objectContaining({
+                  location: 'page2.html',
+                }),
               }),
             ]),
           },
