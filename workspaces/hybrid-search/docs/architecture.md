@@ -113,35 +113,43 @@ graph TD
 
 TechDocs generates static HTML pages via MkDocs. In order to search these documents, they must be parsed, chunked, and ingested into the search engine. This workspace supports two ingestion architectures:
 
-### Option A: Direct Local Indexing (Synchronous)
+### Option A: Standard Collator-Based Indexing (Synchronous Pull)
 
-In this mode, when a Backstage build pipeline compiles a TechDocs site, the local builder uses the search engine API client to send documents directly to the search engine.
-
-```mermaid
-graph LR
-    LocalBuilder[Backstage Build Job] -->|1. Parse HTML| Docs[Parsed Pages]
-    LocalBuilder -->|2. Direct HTTP API| SearchEngine[(Search Engine API)]
-```
-
-- **Advantages**: Simple deployment; requires no cloud infrastructure or event routing setup.
-- **Disadvantages**: Increases build pipeline execution time; coupling the build step directly to search engine API endpoints can create a bottleneck if the search engine experiences rate limits or downtime during a build.
-
-### Option B: Decoupled Ingestion Pipeline (Asynchronous)
-
-This is the recommended production pattern. The build step is fully decoupled from search engine APIs.
+In this mode, the build pipeline compiles TechDocs and uploads the static files to a storage bucket (GCS). Backstage's search backend runs a scheduled indexing loop using the standard `DefaultTechDocsCollatorFactory`. This collator periodically downloads the compiled TechDocs files from the storage bucket, parses them, and indexes them into the search engine backend.
 
 ```mermaid
-graph LR
-    LocalBuilder[Backstage Build Job] -->|1. Upload search_index.json| GCS[(GCS Bucket)]
-    GCS -->|2. object.v1.finalized event| Eventarc[Eventarc webhook]
-    Eventarc -->|3. Trigger Ingestion| BS[Backstage Ingress Endpoint]
-    BS -->|4. Enrich & Index| VAI[(Search Engine)]
+graph TD
+    Pipeline[CI/CD Build Pipeline] -->|1. Upload HTML/JSON| GCS[(TechDocs Storage Bucket)]
+    BS[Backstage Backend <br> runs TechDocs Collator] -->|2. Pull / Read Docs| GCS
+    BS -->|3. Index Documents| SearchEngine[(Search Engine API)]
 ```
 
 - **Advantages**:
-  - **Build Isolation**: The techdocs build job only needs to write a `search_index.json` file to a GCS bucket and finishes instantly.
-  - **Resilience**: Ingestion failures can be retried independently without failing the documentation build.
-  - **Enrichment**: Enables Backstage to dynamically query the Catalog Service to enrich index documents with entity catalog metadata (such as Component owner, lifecycle, and team tags) before sending them to the search engine.
+  - Uses standard, built-in Backstage workflow patterns.
+  - Simple deployment; requires no external cloud events or webhook listener configuration.
+- **Disadvantages**:
+  - **Scheduled Delay**: Indexing runs on a schedule, meaning search content updates are not real-time.
+  - **Resource Usage**: Downloading and parsing HTML pages runs inside the Backstage backend process, causing periodic CPU and network spikes.
+
+### Option B: Decoupled Ingestion Pipeline (Asynchronous Push)
+
+This is the recommended production pattern for real-time, lightweight ingestion. The build pipeline compiles TechDocs, generates a `search_index.json` file, and uploads it to GCS. The upload triggers a GCS Eventarc finalized event, notifying the Backstage Webhook Receiver. Backstage immediately fetches the pre-built index file from GCS, enriches it, and pushes it to the search engine.
+
+```mermaid
+graph TD
+    Pipeline[CI/CD Build Pipeline] -->|1. Upload search_index.json| GCS[(GCS Bucket)]
+    GCS -->|2. object.v1.finalized event| Eventarc[Eventarc webhook]
+    Eventarc -->|3. Trigger Ingestion Webhook| BS[Backstage Ingress Endpoint]
+    BS -->|4. Fetch search_index.json| GCS
+    BS -->|5. Enrich & Index| VAI[(Search Engine)]
+```
+
+- **Advantages**:
+  - **Build Isolation & Performance**: The heavy HTML parsing happens in the build job, keeping Backstage backend overhead minimal.
+  - **Real-time Updates**: Search indices are updated instantly upon GCS upload.
+  - **Catalog Metadata Enrichment**: Enables Backstage to query the Catalog Service to enrich index documents with entity catalog metadata (owner, lifecycle, tags) before indexing.
+- **Disadvantages**:
+  - Requires event routing infrastructure (GCP Eventarc and Pub/Sub) and setting up an external webhook receiver on the Backstage backend.
 
 ---
 
