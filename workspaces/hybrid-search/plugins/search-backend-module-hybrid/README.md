@@ -50,7 +50,9 @@ $$score_{normalized} = \frac{score_{raw}}{score_{max\_in\_set}}$$
 - Finally, all results are merged and sorted by their `score_normalized` descending.
 - **When to use**: Best when you want to prioritize the most relevant results across all backends. This ensures that a highly confident documentation match from Vertex AI appears above a lower-confidence catalog match from Typesense, even if their raw scores cannot be compared directly.
 
-> [!IMPORTANT] > **Enforcing Page Limits & Pagination Behaviors**:
+> [!IMPORTANT]
+>
+> **Enforcing Page Limits & Pagination Behaviors**:
 >
 > - **Single-Engine Routing (Full Pagination)**: If a query maps exclusively to a single registered sub-engine (for example, when a developer is browsing a specialized tab like "Documentation" or "Services"), the router forwards the entire query directly. Any pagination cursor returned by that sub-engine is passed straight back to the client, enabling **100% native, deep pagination**.
 > - **Multi-Engine Routing (Capped Page 1 Results)**: If a search query is federated in parallel across multiple engines (e.g. global search), each engine independently returns its top `pageLimit` results. To prevent a bloated payload (which would contain up to `N * pageLimit` items), the router consolidates the result sets, **slices the consolidated array** to respect the client's `pageLimit`, and returns the results **without a pagination `cursor`**.

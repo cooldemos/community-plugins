@@ -64,7 +64,9 @@ graph LR
 
 Since local HTML building and parsing are bypassed in decoupled mode, standard Backstage search schedules do not automatically handle document deletions. To address this, the module includes a background cleanup sweeper task that scans for and deletes orphaned documentation assets from Google Cloud Storage (GCS) and Vertex AI Search when catalog entities are removed.
 
-> [!IMPORTANT] > **Sweeper Ingestion Dependency**: The cleanup sweeper task is only active when direct local indexing is disabled (`indexing.enabled = false`). If local indexing is enabled (Option A), catalog synchronization and deletions are handled by standard Backstage collator schedules.
+> [!IMPORTANT]
+>
+> **Sweeper Ingestion Dependency**: The cleanup sweeper task is only active when direct local indexing is disabled (`indexing.enabled = false`). If local indexing is enabled (Option A), catalog synchronization and deletions are handled by standard Backstage collator schedules.
 >
 > **Startup Delay**: To prevent race conditions where active files are deleted during startup before the catalog has finished bootstrapping, the sweeper incorporates a startup delay (defaults to 2 minutes) before starting its first sweep.
 
@@ -168,7 +170,9 @@ search:
 
 Configure the Google Cloud Vertex AI Search settings in your `app-config.yaml`. By default, local indexing is bypassed. Direct local indexing can be enabled for streaming assets like Catalog entities directly to Vertex AI Search.
 
-> [!IMPORTANT] > **Catalog Indexing Force-Enabled**:
+> [!IMPORTANT]
+>
+> **Catalog Indexing Force-Enabled**:
 > Indexing for the `software-catalog` type is mandatory. Configuration settings attempting to disable it globally or specifically will be ignored, and backend initialization will override the setting to enabled with a log warning.
 
 ### The `blendedSearch` Config Block
@@ -179,12 +183,16 @@ The `blendedSearch` configuration block determines how Vertex AI Search queries 
 - **`location`** (string): The geographic region/location of the global blended search app (e.g., `global`, `europe-west4`).
 - **`engineId`** (string): The global blended search App Engine ID.
 
-> [!WARNING] > **Blended Search Conflict in Hybrid Setup**:
+> [!WARNING]
+>
+> **Blended Search Conflict in Hybrid Setup**:
 > Configure `blendedSearch` only when using Vertex AI Search in Standalone mode.
 >
 > In a Hybrid Search Router setup, global query blending is managed by the Backstage Hybrid Search Router itself. Specifying `blendedSearch` in Hybrid mode will result in a configuration conflict error.
 
-> [!NOTE] > **No Relevance Scores in Blended App Response**:
+> [!NOTE]
+>
+> **No Relevance Scores in Blended App Response**:
 > When querying a global `blendedSearch` App (via `engineId`), the Google Cloud Discovery Engine API merges results from all underlying datastores but does not return a `relevanceScore` in the response hits. As a result, the `score` field in the final search results will be returned as `null` or `undefined` for blended matches. Querying individual datastores directly returns numerical scores.
 
 ---
@@ -299,7 +307,9 @@ The script runs in two steps:
 1. **`prepare-docs`**: Scans the source TechDocs GCS bucket for `search_index.json` files, downloads/parses them, fetches metadata from the running Backstage catalog API to enrich the documents with owner/lifecycle annotations, maps them to the required Vertex AI structured schema, and uploads them to a staging GCS bucket as `.ndjson` files.
 2. **`import-docs`**: Batches and imports those staging `.ndjson` files into the Vertex AI Search Datastore using the GCP Discovery Engine API.
 
-> [!IMPORTANT] > **Staging GCS Bucket Requirement**:
+> [!IMPORTANT]
+>
+> **Staging GCS Bucket Requirement**:
 > Before running the script, create a separate, empty Google Cloud Storage bucket (e.g., `your-temporary-staging-gcs-bucket`) to serve as a staging area. The script outputs flat structured NDJSON files into this bucket, which are subsequently read by the Discovery Engine API during the import step.
 
 ### How to Run:
@@ -509,7 +519,9 @@ resource "google_discovery_engine_app" "backstage_search" {
 }
 ```
 
-> [!IMPORTANT] > **GCP Service Account IAM Requirements**:
+> [!IMPORTANT]
+>
+> **GCP Service Account IAM Requirements**:
 > The Service Account used by your Backstage backend must have:
 >
 > 1. **`roles/discoveryengine.admin`** on the GCP project or Discovery Engine resource. _(Note: Admin permission is strictly required; lower-tier editor/viewer roles will fail to purge/delete indexed documents)._
