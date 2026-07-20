@@ -145,6 +145,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Restructure the "Required Integration Dependencies" section to clearly separate general configuration settings from TechDocs Ingestion Modes (Direct Local Indexing vs. Decoupled Ingestion Pipeline), clarifying that Eventarc and GCS publisher settings are only needed for Decoupled mode.
 - In the Core Features list, refine the "Direct Local Indexing" description to explain the behavior conceptually without mentioning the `VertexAIWritableStream` class name.
 - Combine the "Ingestion Bypass & Decoupled Indexing" section and the "TechDocs Ingestion Modes" section under a unified "TechDocs Ingestion Architecture & Modes" header, nesting the bypass explanation, mermaid diagram, and decoupled pipeline requirements cleanly under Option B (Decoupled Ingestion Pipeline).
+- Under Option B's "How it Works" section, remove the misplaced "Semantic Querying" step, since query serving is identical across both modes and is not a part of decoupled ingestion.
 
 ## 4. Verification Plan
 
