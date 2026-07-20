@@ -146,6 +146,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - In the Core Features list, refine the "Direct Local Indexing" description to explain the behavior conceptually without mentioning the `VertexAIWritableStream` class name.
 - Combine the "Ingestion Bypass & Decoupled Indexing" section and the "TechDocs Ingestion Modes" section under a unified "TechDocs Ingestion Architecture & Modes" header, nesting the bypass explanation, mermaid diagram, and decoupled pipeline requirements cleanly under Option B (Decoupled Ingestion Pipeline).
 - Under Option B's "How it Works" section, remove the misplaced "Semantic Querying" step, since query serving is identical across both modes and is not a part of decoupled ingestion.
+- Remove the redundant "General Configuration" section and snippet from the top of the README, keeping only the detailed config examples under the main Configuration section.
 
 ## 4. Verification Plan
 

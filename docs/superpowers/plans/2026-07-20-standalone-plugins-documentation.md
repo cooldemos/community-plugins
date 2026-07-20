@@ -231,6 +231,7 @@ git commit -m "docs: document standalone deployment mode and simplify query orch
 5. Refine the "Direct Local Indexing" feature description to describe its behavior conceptually and remove the `VertexAIWritableStream` class name.
 6. Combine the Ingestion Bypass and Ingestion Modes sections under a unified TechDocs Ingestion Architecture & Modes header, nesting bypass details under Option B.
 7. Under Option B's "How it Works" section, remove the misplaced "Semantic Querying" step.
+8. Remove the redundant "General Configuration" section and configuration snippet from the top.
 
 - [ ] **Step 2: Run prettier to format the updated markdown file**
       Run: `npx prettier --write plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.
