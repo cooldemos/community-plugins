@@ -232,7 +232,7 @@ git commit -m "docs: document standalone deployment mode and simplify query orch
 6. Combine the Ingestion Bypass and Ingestion Modes sections under a unified TechDocs Ingestion Architecture & Modes header, nesting bypass details under Option B.
 7. Under Option B's "How it Works" section, remove the misplaced "Semantic Querying" step.
 8. Remove the redundant "General Configuration" section and configuration snippet from the top.
-9. Reposition the detailed notes/alerts for the Catalog Cleanup Sweeper from the features list to under Option B (Decoupled Ingestion Pipeline).
+9. Reposition the Catalog Cleanup Sweeper feature entirely from the features list down to a dedicated section under Option B (Decoupled Ingestion Pipeline).
 10. Standardize all markdown alert blocks to use standard multiline formatting.
 
 - [ ] **Step 2: Run prettier to format the updated markdown file**

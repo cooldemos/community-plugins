@@ -147,7 +147,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Combine the "Ingestion Bypass & Decoupled Indexing" section and the "TechDocs Ingestion Modes" section under a unified "TechDocs Ingestion Architecture & Modes" header, nesting the bypass explanation, mermaid diagram, and decoupled pipeline requirements cleanly under Option B (Decoupled Ingestion Pipeline).
 - Under Option B's "How it Works" section, remove the misplaced "Semantic Querying" step, since query serving is identical across both modes and is not a part of decoupled ingestion.
 - Remove the redundant "General Configuration" section and snippet from the top of the README, keeping only the detailed config examples under the main Configuration section.
-- Reposition the operational details and notes of the Catalog Cleanup Sweeper from the Core Features list down to under Option B (Decoupled Ingestion Pipeline), leaving only a simple high-level summary in the Core Features list.
+- Reposition the Catalog Cleanup Sweeper feature entirely from the Core Features list down to a dedicated section under Option B (Decoupled Ingestion Pipeline), since it is only active and relevant in decoupled mode.
 - Standardize markdown alert syntax across the modified documentation to use proper multiline blocks.
 
 ## 4. Verification Plan
