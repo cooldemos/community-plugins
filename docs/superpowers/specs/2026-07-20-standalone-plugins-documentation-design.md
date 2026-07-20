@@ -34,17 +34,19 @@ Each search engine module in this workspace is designed to be highly flexible an
 
 ### Hybrid Module README Example Fixes:
 
-In `plugins/search-backend-module-hybrid/README.md`, update the `### Concrete Examples` code blocks:
-
-- Typesense:
+In `plugins/search-backend-module-hybrid/README.md`, update the `### Concrete Examples` section to replace the two concrete examples with a single hypothetical custom engine example:
 
 ```typescript
+import {
+  coreServices,
+  createBackendModule,
+} from '@backstage/backend-plugin-api';
 import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { TypesenseSearchEngine } from './TypesenseSearchEngine';
+import { CustomSearchEngine } from './CustomSearchEngine'; // Your custom search engine class
 
-export const searchModuleTypesenseHybridSearch = createBackendModule({
+export const searchModuleCustomHybridSearch = createBackendModule({
   pluginId: 'search',
-  moduleId: 'typesense-hybrid-search',
+  moduleId: 'custom-hybrid-search',
   register(env) {
     env.registerInit({
       deps: {
@@ -53,39 +55,25 @@ export const searchModuleTypesenseHybridSearch = createBackendModule({
         logger: coreServices.logger,
       },
       async init({ hybridRegistry, config, logger }) {
-        const typesenseSearchEngine = createTypesenseEngine(config, logger);
+        logger.info(
+          'Initializing Custom Search Engine for Hybrid Search Router.',
+        );
 
-        hybridRegistry.registerEngine('typesense', typesenseSearchEngine, {
-          supportsTypes: ['software-catalog'],
+        // Instantiate your custom search engine implementation
+        const customSearchEngine = new CustomSearchEngine({
+          logger,
+          config,
         });
-      },
-    });
-  },
-});
-```
 
-- Vertex AI:
-
-```typescript
-import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { VertexAISearchEngine } from './VertexAISearchEngine';
-
-export const searchModuleVertexAISearchHybrid = createBackendModule({
-  pluginId: 'search',
-  moduleId: 'vertexai-search-hybrid',
-  register(env) {
-    env.registerInit({
-      deps: {
-        hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
-        config: coreServices.rootConfig,
-        logger: coreServices.logger,
-      },
-      async init({ hybridRegistry, config, logger }) {
-        const vertexAiSearchEngine = createVertexAiSearchEngine(config, logger);
-
-        hybridRegistry.registerEngine('vertexai', vertexAiSearchEngine, {
-          supportsTypes: ['techdocs'],
-        });
+        // Register the engine instance to the Hybrid Registry,
+        // specifying the document types (categories) it supports.
+        hybridRegistry.registerEngine(
+          'custom-engine-name',
+          customSearchEngine,
+          {
+            supportsTypes: ['software-catalog', 'custom-type'],
+          },
+        );
       },
     });
   },

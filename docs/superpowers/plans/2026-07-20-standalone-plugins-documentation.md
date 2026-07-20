@@ -103,15 +103,15 @@ git commit -m "docs: document standalone deployment mode in hybrid search worksp
 - [ ] **Step 1: Modify workspaces/hybrid-search/plugins/search-backend-module-hybrid/README.md**
 
 Modify `workspaces/hybrid-search/plugins/search-backend-module-hybrid/README.md` to:
-Update the Typesense and Vertex AI search module registration code blocks under `### Concrete Examples` with the correct module names and registration formats matching their hybrid entry points.
+Replace the Concrete Examples section (Lines 159-253) with a single example showing how to write a custom search engine module (`searchModuleCustomHybridSearch`) using `CustomSearchEngine` that registers to the `hybridSearchEngineRegistryExtensionPoint`.
 
 - [ ] **Step 2: Run prettier to format the updated markdown file**
 
-Run: `npx prettier --write workspaces/hybrid-search/plugins/search-backend-module-hybrid/README.md` in `workspaces/hybrid-search/`.
+Run: `npx prettier --write plugins/search-backend-module-hybrid/README.md` in `workspaces/hybrid-search/`.
 
 - [ ] **Step 3: Run prettier check to verify formatting is clean**
 
-Run: `npx prettier --check workspaces/hybrid-search/plugins/search-backend-module-hybrid/README.md` in `workspaces/hybrid-search/`.
+Run: `npx prettier --check plugins/search-backend-module-hybrid/README.md` in `workspaces/hybrid-search/`.
 Expected: `README.md` is fully formatted and passes the check.
 
 - [ ] **Step 4: Commit the changes**
@@ -120,5 +120,5 @@ Run:
 
 ```bash
 git add plugins/search-backend-module-hybrid/README.md
-git commit -m "docs: fix hybrid registry code examples in hybrid plugin README"
+git commit -m "docs: replace concrete sub-engine registration examples with hypothetical custom engine example"
 ```
