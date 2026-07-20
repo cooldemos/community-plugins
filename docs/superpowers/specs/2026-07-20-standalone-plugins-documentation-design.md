@@ -155,6 +155,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - In the GCS Eventarc Events module README, simplify the GCP Service Accounts & IAM Roles list under the Eventarc Service Agent section by stating once at the group level that it is only required for GKE destinations, instead of repeating it for each individual permission.
 - In the GCS Eventarc Events module README, add a new section documenting how to configure a Dead-Letter Topic (DLQ) to handle webhook delivery failures, detailing the necessary Terraform resources, Pub/Sub Service Agent IAM publisher role, and gcloud commands to attach the policy to the managed subscription.
 - In the workspace architecture explanation document (docs/architecture.md), present hybrid search routing and use cases conceptually. Remove detailed engine suitability comparisons (e.g. arguing Typesense is for catalog and Vertex AI for techdocs), and focus instead on general reasons why hybrid search is useful (such as backend isolation, query distribution, and modular resource scaling).
+- Correct the TechDocs Ingestion Architectures description in docs/architecture.md to accurately represent the standard Backstage flow: Option A (Standard Collator-Based Indexing) uses a pull-based scheduled search backend collator to read files from GCS, whereas Option B (Decoupled Ingestion Pipeline) uses an event-driven webhook push trigger to process a pre-built search_index.json file from GCS.
 
 ## 4. Verification Plan
 

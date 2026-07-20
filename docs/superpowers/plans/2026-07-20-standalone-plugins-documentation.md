@@ -374,6 +374,35 @@ Run:
 git add docs/architecture.md
 git commit -m "docs: generalize hybrid search architecture document to conceptual routing focus"
 ```
+```
+
+## Task 10: Correct TechDocs Ingestion Flow and Diagram in docs/architecture.md
+
+### Description
+Update the TechDocs Ingestion Architectures section in `docs/architecture.md` to accurately represent how standard Backstage TechDocs indexing works:
+- **Option A**: Standard collator-based indexing is a pull-based scheduled model where Backstage's search backend runs the `DefaultTechDocsCollatorFactory` to fetch, parse, and index pages from GCS.
+- **Option B**: Decoupled ingestion is an event-driven push-based model where the build pipeline uploads `search_index.json` to GCS, triggering an Eventarc webhook that pushes the data to Backstage for enrichment and indexing.
+
+**Acceptable files:**
+- `workspaces/hybrid-search/docs/architecture.md`
+
+**Step 1: Modify workspaces/hybrid-search/docs/architecture.md**
+Rewrite Section 4 ("TechDocs Ingestion Architectures") flow descriptions and replace both Option A and Option B Mermaid diagrams to represent these flows accurately.
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write docs/architecture.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check docs/architecture.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add docs/architecture.md
+git commit -m "docs: correct techdocs ingestion architecture flow in docs/architecture.md"
+```
+
 
 
 
