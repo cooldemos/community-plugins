@@ -8,6 +8,7 @@ The high-level workspace documentation for the hybrid search plugins (`search-ba
 
 - In `workspaces/hybrid-search/README.md`, add a new subsection `### 🔌 Deployment Modes` under `## 🏛️ High-Level Architecture` to explain the Standalone and Hybrid deployment modes.
 - Update the descriptions for the "Typesense Search Engine Module" and "Vertex AI Search Engine Module" in the `## 📦 Workspace Plugins & Modules` table.
+- In `plugins/search-backend-module-hybrid/README.md`, fix the example code blocks for Typesense and Vertex AI search engine registration under the `### Concrete Examples` subsection to use the correct module names (`searchModuleTypesenseHybridSearch` and `searchModuleVertexAISearchHybrid`) and structure.
 
 ## 3. Detailed Changes Reference
 
@@ -30,6 +31,66 @@ Each search engine module in this workspace is designed to be highly flexible an
 - **Vertex AI Search Engine Module**:
   Update description to:
   "Integrates Google Cloud Vertex AI Search into Backstage. Can be deployed as a standalone primary search engine or registered as a sub-engine to the Hybrid Router. Translates queries to Discovery Engine API requests and manages background catalog cleanup."
+
+### Hybrid Module README Example Fixes:
+
+In `plugins/search-backend-module-hybrid/README.md`, update the `### Concrete Examples` code blocks:
+
+- Typesense:
+
+```typescript
+import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
+import { TypesenseSearchEngine } from './TypesenseSearchEngine';
+
+export const searchModuleTypesenseHybridSearch = createBackendModule({
+  pluginId: 'search',
+  moduleId: 'typesense-hybrid-search',
+  register(env) {
+    env.registerInit({
+      deps: {
+        hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
+        config: coreServices.rootConfig,
+        logger: coreServices.logger,
+      },
+      async init({ hybridRegistry, config, logger }) {
+        const typesenseSearchEngine = createTypesenseEngine(config, logger);
+
+        hybridRegistry.registerEngine('typesense', typesenseSearchEngine, {
+          supportsTypes: ['software-catalog'],
+        });
+      },
+    });
+  },
+});
+```
+
+- Vertex AI:
+
+```typescript
+import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
+import { VertexAISearchEngine } from './VertexAISearchEngine';
+
+export const searchModuleVertexAISearchHybrid = createBackendModule({
+  pluginId: 'search',
+  moduleId: 'vertexai-search-hybrid',
+  register(env) {
+    env.registerInit({
+      deps: {
+        hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
+        config: coreServices.rootConfig,
+        logger: coreServices.logger,
+      },
+      async init({ hybridRegistry, config, logger }) {
+        const vertexAiSearchEngine = createVertexAiSearchEngine(config, logger);
+
+        hybridRegistry.registerEngine('vertexai', vertexAiSearchEngine, {
+          supportsTypes: ['techdocs'],
+        });
+      },
+    });
+  },
+});
+```
 
 ## 4. Verification Plan
 
