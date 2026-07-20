@@ -35,28 +35,7 @@ To eliminate the need to pre-define schemas for every Backstage document type, t
 To allow full access to Typesense's advanced capabilities (such as connection management, custom query boosting, or AI-powered vector searches) without hardcoding them, this module implements a **raw configuration passthrough pattern**:
 
 - **Client Connection Options**: Any key-value pairs defined under `clientOptions` in `app-config.yaml` are forwarded directly to the constructor of the underlying `typesense` client library.
-- **Custom Collection Schemas**: When a collection is created, you can specify custom field schemas inside the `collections` configuration block (e.g. to enable built-in vector/semantic search using `ts/all-MiniLM-L6-v2` embedding models).
-
-  _Example configuration enabling a custom vector field:_
-
-  ```yaml
-  search:
-    engines:
-      typesense:
-        collections:
-          techdocs:
-            fields:
-              - name: '.*'
-                type: 'auto'
-              - name: embedding
-                type: 'float[]'
-                num_dim: 384
-                embed:
-                  from:
-                    - text
-                  model_config:
-                    model_name: 'ts/all-MiniLM-L6-v2'
-  ```
+- **Custom Collection Schemas**: When a collection is created, you can specify custom field schemas inside the `collections` configuration block (e.g. to enable built-in vector/semantic search using `ts/all-MiniLM-L6-v2` embedding models). See the [Custom Collection & Vector Search Configuration](#3-custom-collection--vector-search-configuration) section below for a configuration example.
 
 - **Custom Query Options**: Any properties defined under `searchOptions` are merged directly into the query payload sent to the Typesense search endpoint (e.g. custom `query_by` fields).
 
@@ -178,4 +157,29 @@ search:
           searchOptions:
             query_by: 'title,text,location'
     # Configuration for other engines (e.g. vertexai) goes here...
+```
+
+---
+
+### 3. Custom Collection & Vector Search Configuration
+
+If you want to configure custom schemas for specific document types (such as configuring Typesense's built-in semantic/vector search using the `ts/all-MiniLM-L6-v2` model):
+
+```yaml
+search:
+  engines:
+    typesense:
+      collections:
+        software-catalog:
+          fields:
+            - name: '.*'
+              type: 'auto'
+            - name: embedding
+              type: 'float[]'
+              num_dim: 384
+              embed:
+                from:
+                  - text
+                model_config:
+                  model_name: 'ts/all-MiniLM-L6-v2'
 ```
