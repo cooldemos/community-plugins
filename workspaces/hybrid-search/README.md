@@ -1,14 +1,12 @@
 # Hybrid Search Workspace (`workspaces/hybrid-search`)
 
-Welcome to the **Modular Hybrid Search Workspace** for Backstage.
-
-This workspace hosts a modular hybrid search architecture for Backstage. It allows routing queries to different search engines (such as Vertex AI, Typesense, or others) in parallel based on the requested categories, and dynamically merging and interleaving the search results into a single unified search experience.
+This workspace hosts a modular hybrid search architecture for Backstage. It allows routing queries to different search engines (such as Vertex AI, Typesense, or others) in parallel based on the requested categories, and dynamically merging the search results into a single unified search experience.
 
 ---
 
 ## 🏛️ High-Level Architecture
 
-The workspace implements a **Federated Hybrid Search** pipeline. Queries from the user interface are handled by the hybrid engine router, which splits the query across different search systems (engines) in parallel based on the requested document categories (types), then merges and interleaves the results.
+The workspace implements a **Federated Hybrid Search** pipeline. Queries from the user interface are handled by the hybrid engine router, which splits the query across different search systems (engines) in parallel based on the requested document categories (types), then merges the results.
 
 ```mermaid
 graph LR
@@ -59,7 +57,7 @@ Each search engine module in this workspace is designed to be highly flexible an
 
 ## 📦 Workspace Plugins & Modules
 
-This workspace contains four highly specialized plugins:
+This workspace contains four specialized plugins:
 
 | Plugin / Module                    | Directory                                                                                              | Purpose                                                                                                                                                                                                                                                                                                                                                                  |
 | :--------------------------------- | :----------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
