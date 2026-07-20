@@ -502,3 +502,46 @@ resource "google_kms_crypto_key_iam_member" "eventarc_kms" {
   member        = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com"
 }
 ```
+
+### Dead-Letter Topic Configuration (Handling Delivery Failures)
+
+Since Eventarc routes GCS notifications to your Backstage webhook endpoint over HTTP, webhook delivery can fail if your Backstage instance is temporarily down, experiencing high load, or returns 5xx error responses.
+
+To prevent events from being silently lost after Eventarc exhausts its default retry attempts, you should configure a **Dead-Letter Topic (DLQ)** on the underlying Pub/Sub subscription managed by Eventarc.
+
+Because the Terraform `google_eventarc_trigger` resource does not currently support configuring a dead-letter policy directly, you must configure this using `gcloud` or Terraform Pub/Sub resources:
+
+#### Step 1: Create a Dead-Letter Pub/Sub Topic
+
+Create a separate Pub/Sub topic to receive failed events:
+
+```hcl
+resource "google_pubsub_topic" "eventarc_dlq" {
+  name = "gcs-eventarc-dlq"
+}
+```
+
+#### Step 2: Grant Pub/Sub Permission to Publish to the Dead-Letter Topic
+
+Pub/Sub needs permission to write failed messages to the DLQ topic. Grant the `roles/pubsub.publisher` role on the DLQ topic to the GCP Pub/Sub Service Agent (`service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com`):
+
+```hcl
+resource "google_pubsub_topic_iam_member" "pubsub_dlq_publisher" {
+  topic  = google_pubsub_topic.eventarc_dlq.name
+  role   = "roles/pubsub.publisher"
+  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+```
+
+#### Step 3: Attach the Dead-Letter Policy to the Eventarc Subscription
+
+1. Identify the Pub/Sub subscription managed by your Eventarc trigger:
+   ```bash
+   gcloud eventarc triggers describe gcs-to-backstage-run --location=europe-west1 --format="value(transport.pubsub.subscription)"
+   ```
+2. Update the subscription with a dead-letter policy pointing to your DLQ topic:
+   ```bash
+   gcloud pubsub subscriptions update <SUBSCRIPTION_NAME> \
+     --dead-letter-topic=gcs-eventarc-dlq \
+     --max-delivery-attempts=5
+   ```
