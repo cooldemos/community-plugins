@@ -122,3 +122,52 @@ Run:
 git add plugins/search-backend-module-hybrid/README.md
 git commit -m "docs: replace concrete sub-engine registration examples with hypothetical custom engine example"
 ```
+
+---
+
+### Task 3: Update plugins/README.md Table
+
+**Files:**
+
+- Modify: `workspaces/hybrid-search/plugins/README.md:37-42`
+
+**Interfaces:**
+
+- N/A
+
+- [ ] **Step 1: Modify workspaces/hybrid-search/plugins/README.md**
+
+Modify the table rows for Vertex AI Search and Typesense Search in `workspaces/hybrid-search/plugins/README.md`:
+Rename the columns and rewrite the descriptions to emphasize their standalone capabilities and correct naming.
+
+Specifically, replace:
+
+```markdown
+| **Vertex AI Search Sub-Engine** | [`search-backend-module-vertexai`](./search-backend-module-vertexai/README.md) | **Semantic Search**: Sub-engine that translates Backstage search queries to Google Discovery Engine API calls, supporting semantic search across any configured unstructured or structured indices. |
+| **Typesense Search Sub-Engine** | [`search-backend-module-typesense`](./search-backend-module-typesense/README.md) | **Structured Search**: Sub-engine that indexes and searches structured Backstage entities (such as catalog components, API definitions, or custom indices) with typo-tolerance. |
+```
+
+With:
+
+```markdown
+| **Vertex AI Search Engine Module** | [`search-backend-module-vertexai`](./search-backend-module-vertexai/README.md) | **Semantic Search**: Integrates Google Cloud Vertex AI Search. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Translates Backstage queries to Discovery Engine API calls. |
+| **Typesense Search Engine Module** | [`search-backend-module-typesense`](./search-backend-module-typesense/README.md) | **Structured Search**: Integrates Typesense capabilities. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Indexes and searches structured Backstage entities with typo-tolerance. |
+```
+
+- [ ] **Step 2: Run prettier to format the updated markdown file**
+
+Run: `npx prettier --write plugins/README.md` in `workspaces/hybrid-search/`.
+
+- [ ] **Step 3: Run prettier check to verify formatting is clean**
+
+Run: `npx prettier --check plugins/README.md` in `workspaces/hybrid-search/`.
+Expected: `README.md` is fully formatted and passes the check.
+
+- [ ] **Step 4: Commit the changes**
+
+Run:
+
+```bash
+git add plugins/README.md
+git commit -m "docs: document standalone deployment mode in plugins README table"
+```

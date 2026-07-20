@@ -9,6 +9,7 @@ The high-level workspace documentation for the hybrid search plugins (`search-ba
 - In `workspaces/hybrid-search/README.md`, add a new subsection `### 🔌 Deployment Modes` under `## 🏛️ High-Level Architecture` to explain the Standalone and Hybrid deployment modes.
 - Update the descriptions for the "Typesense Search Engine Module" and "Vertex AI Search Engine Module" in the `## 📦 Workspace Plugins & Modules` table.
 - In `plugins/search-backend-module-hybrid/README.md`, fix the example code blocks for Typesense and Vertex AI search engine registration under the `### Concrete Examples` subsection to use the correct module names (`searchModuleTypesenseHybridSearch` and `searchModuleVertexAISearchHybrid`) and structure.
+- In `plugins/README.md`, update the module table entries for Typesense and Vertex AI search engines to rename them to match the module names and mention their standalone deployment capability.
 
 ## 3. Detailed Changes Reference
 
@@ -23,7 +24,7 @@ Each search engine module in this workspace is designed to be highly flexible an
 2. **Hybrid Mode (Federated Search)**: The [Hybrid Search Engine Router](./plugins/search-backend-module-hybrid/README.md) is registered as the primary search engine, and delegates queries to multiple sub-engines (like Typesense and Vertex AI Search) in parallel based on the requested categories, merging the results dynamically.
 ```
 
-### Table Row updates:
+### Table Row updates (workspaces/hybrid-search/README.md):
 
 - **Typesense Search Engine Module**:
   Update description to:
@@ -31,6 +32,17 @@ Each search engine module in this workspace is designed to be highly flexible an
 - **Vertex AI Search Engine Module**:
   Update description to:
   "Integrates Google Cloud Vertex AI Search into Backstage. Can be deployed as a standalone primary search engine or registered as a sub-engine to the Hybrid Router. Translates queries to Discovery Engine API requests and manages background catalog cleanup."
+
+### Table Row updates (workspaces/hybrid-search/plugins/README.md):
+
+- **Vertex AI Search Engine Module**:
+  Rename to: `**Vertex AI Search Engine Module**`
+  Update description to:
+  `**Semantic Search**: Integrates Google Cloud Vertex AI Search. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Translates Backstage queries to Discovery Engine API calls.`
+- **Typesense Search Engine Module**:
+  Rename to: `**Typesense Search Engine Module**`
+  Update description to:
+  `**Structured Search**: Integrates Typesense capabilities. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Indexes and searches structured Backstage entities with typo-tolerance.`
 
 ### Hybrid Module README Example Fixes:
 
