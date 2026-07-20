@@ -244,10 +244,29 @@ git commit -m "docs: document standalone deployment mode and simplify query orch
       Run: `npx prettier --check plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.
       Expected: file passes the check.
 
-- [ ] **Step 4: Commit the changes**
-      Run:
+````
 
+## Task 5: Add Custom Collection Schema Examples to Typesense README
+
+### Description
+Add an example showing how to configure a custom collection schema (such as a vector/semantic search field configuration) under the Custom Collection Schemas feature description in `plugins/search-backend-module-typesense/README.md`.
+
+**Acceptable files:**
+- `workspaces/hybrid-search/plugins/search-backend-module-typesense/README.md`
+
+**Step 1: Modify workspaces/hybrid-search/plugins/search-backend-module-typesense/README.md**
+Add a yaml configuration code block under the `Custom Collection Schemas` list item showing a custom schema config (including the wildcard rule and an explicit vector field mapping).
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write plugins/search-backend-module-typesense/README.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check plugins/search-backend-module-typesense/README.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
 ```bash
-git add plugins/search-backend-module-vertexai/README.md
-git commit -m "docs: remove salesy tone and stick to technical facts in Vertex AI search engine README"
-```
+git add plugins/search-backend-module-typesense/README.md
+git commit -m "docs: add custom collection vector schema configuration example to Typesense README"
+````

@@ -151,6 +151,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Standardize markdown alert syntax across the modified documentation to use proper multiline blocks.
 - In the Decoupled Ingestion Pipeline (Option B) description, add a brief explanation of Eventarc (identifying it as a GCP event routing service that triggers Backstage webhooks upon GCS uploads).
 - Omit snippetSpec from the Standalone configuration example, showing only the recommended extractiveContentSpec block. Document snippetSpec and its format under the Extractive Content & Snippet Priority section as a basic-tier alternative.
+- In the Typesense Search module README, add an example under the Custom Collection Schemas feature description showing how to configure a custom collection schema, including a vector/semantic search field configuration.
 
 ## 4. Verification Plan
 
