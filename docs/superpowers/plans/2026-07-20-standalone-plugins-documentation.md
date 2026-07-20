@@ -235,6 +235,7 @@ git commit -m "docs: document standalone deployment mode and simplify query orch
 9. Reposition the Catalog Cleanup Sweeper feature entirely from the features list down to a dedicated section under Option B (Decoupled Ingestion Pipeline).
 10. Standardize all markdown alert blocks to use standard multiline formatting.
 11. In the Decoupled Ingestion Pipeline (Option B) description, add a parenthetical definition of Eventarc.
+12. Omit snippetSpec from the Standalone configuration example, showing only the recommended extractiveContentSpec block. Document snippetSpec and its format under the Extractive Content & Snippet Priority section.
 
 - [ ] **Step 2: Run prettier to format the updated markdown file**
       Run: `npx prettier --write plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.

@@ -150,6 +150,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Reposition the Catalog Cleanup Sweeper feature entirely from the Core Features list down to a dedicated section under Option B (Decoupled Ingestion Pipeline), since it is only active and relevant in decoupled mode.
 - Standardize markdown alert syntax across the modified documentation to use proper multiline blocks.
 - In the Decoupled Ingestion Pipeline (Option B) description, add a brief explanation of Eventarc (identifying it as a GCP event routing service that triggers Backstage webhooks upon GCS uploads).
+- Omit snippetSpec from the Standalone configuration example, showing only the recommended extractiveContentSpec block. Document snippetSpec and its format under the Extractive Content & Snippet Priority section as a basic-tier alternative.
 
 ## 4. Verification Plan
 
