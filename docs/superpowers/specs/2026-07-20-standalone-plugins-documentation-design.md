@@ -12,6 +12,7 @@ The high-level workspace documentation for the hybrid search plugins (`search-ba
 - In `plugins/README.md`, update the module table entries for Typesense and Vertex AI search engines to rename them to match the module names and mention their standalone deployment capability.
 - In `plugins/README.md`, update the introductory paragraph to explain both standalone and hybrid modules capabilities.
 - In `plugins/README.md`, rename the bullet points under `### 1. Dynamic Engine Registry via Extension Points` from "Sub-Engine" to "Engine Module".
+- In `plugins/README.md`, simplify the "Event-Driven Delta Ingestion" section to remove code-level details like `asyncPool`, `Promise.all()`, and backend service references.
 
 ## 3. Detailed Changes Reference
 
@@ -59,6 +60,20 @@ Each search engine module in this workspace is designed to be highly flexible an
 
   - `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
   - `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
+  ```
+
+- **Event-Driven Delta Ingestion section (Lines 26-32)**:
+  Replace with:
+
+  ```markdown
+  ### 3. Event-Driven Ingestion & Reconciliation (Vertex AI & TechDocs Specific)
+
+  For TechDocs document indexing in Vertex AI Search, synchronization is real-time, decentralized, and event-driven:
+
+  - **Real-time Webhook**: Listens to bucket upload notifications from Google Eventarc to trigger document indexing immediately upon publication.
+  - **Throttled Batch Ingestion**: Processes changed files, maps them to stable document IDs, and performs batch imports within API rate limits to protect resource bounds.
+  - **Catalog Metadata Enrichment**: Automatically associates indexed documents with their Backstage catalog metadata to enrich search results with owner, lifecycle, and component annotations.
+  - **Delta Reconciliation**: Compares current and historic index states to automatically detect and purge stale or deleted pages.
   ```
 
 - **Vertex AI Search Engine Module (Table)**:

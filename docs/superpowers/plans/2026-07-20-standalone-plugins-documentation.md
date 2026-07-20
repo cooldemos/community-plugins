@@ -129,7 +129,7 @@ git commit -m "docs: replace concrete sub-engine registration examples with hypo
 
 **Files:**
 
-- Modify: `workspaces/hybrid-search/plugins/README.md:1-25, 37-42`
+- Modify: `workspaces/hybrid-search/plugins/README.md:1-32, 37-42`
 
 **Interfaces:**
 
@@ -142,7 +142,8 @@ Modify `workspaces/hybrid-search/plugins/README.md` to:
 1. Replace the introductory paragraph on Line 3 to explain standalone deployment options.
 2. Rename the sub-engine list items on Lines 14-15 to use "Engine Module".
 3. Replace the "Parallel Query Orchestration & Consolidating Strategies" section (Lines 17-25) to simplify the parallel execution wording into a single intro sentence.
-4. Update the table rows for Vertex AI Search and Typesense Search (Lines 37-42) to rename them and describe standalone capabilities.
+4. Replace the "Event-Driven Delta Ingestion" section (Lines 26-32) to simplify the description to conceptual features, removing code-level details.
+5. Update the table rows for Vertex AI Search and Typesense Search (Lines 37-42) to rename them and describe standalone capabilities.
 
 Specifically:
 
@@ -170,6 +171,19 @@ When a user executes a search, the **`HybridSearchEngine`** queries all matching
 - `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
 ```
 
+- Event-Driven Delta Ingestion section (Lines 26-32) replacement:
+
+```markdown
+### 3. Event-Driven Ingestion & Reconciliation (Vertex AI & TechDocs Specific)
+
+For TechDocs document indexing in Vertex AI Search, synchronization is real-time, decentralized, and event-driven:
+
+- **Real-time Webhook**: Listens to bucket upload notifications from Google Eventarc to trigger document indexing immediately upon publication.
+- **Throttled Batch Ingestion**: Processes changed files, maps them to stable document IDs, and performs batch imports within API rate limits to protect resource bounds.
+- **Catalog Metadata Enrichment**: Automatically associates indexed documents with their Backstage catalog metadata to enrich search results with owner, lifecycle, and component annotations.
+- **Delta Reconciliation**: Compares current and historic index states to automatically detect and purge stale or deleted pages.
+```
+
 - Table rows replacement (Lines 39-41):
 
 ```markdown
@@ -192,5 +206,5 @@ Run:
 
 ```bash
 git add plugins/README.md
-git commit -m "docs: document standalone deployment mode and simplify query orchestration section in plugins README"
+git commit -m "docs: document standalone deployment mode and simplify query orchestration and event-driven sections in plugins README"
 ```
