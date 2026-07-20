@@ -6,28 +6,23 @@ This document provides a conceptual and architectural explanation of the **Hybri
 
 ## 1. Introduction & High-Level System Architecture
 
-### The Core Problem
+### The Core Concept
 
-When deploying search capabilities in a Backstage developer portal, operators face a classic trade-off between speed, accuracy, and cost:
+When deploying search capabilities in a Backstage developer portal, operators manage different types of data indexes (such as component catalog entities, technical documentation pages, and team directories). Serving all of these search indexes through a single search engine backend can create performance, scaling, and cost bottlenecks.
 
-1.  **Catalog/Keyword Search**: Backstage software catalogs contain highly structured entity metadata (component names, tags, owners, life-cycle stages). Queries are typically precise, keyword-driven lookup operations. For this task, a search engine needs to be **sub-millisecond fast**, support instant matching, and have low operational overhead.
-2.  **Document/Semantic Search**: TechDocs, developer guides, and tutorials contain unstructured natural language prose. Traditional keyword search often fails here because users query concepts, not exact words. To solve this, **semantic/vector search** engines (which embed text using AI models to search concepts) are required.
+The **Hybrid Search Workspace** implements a routed multi-engine search architecture. Instead of routing all search requests to a single backend, this system allows operators to distribute search query types across **multiple independent search engines** in parallel.
 
-Using a single search engine for both tasks results in compromised performance:
+### Why Use Hybrid Search?
 
-- Running **Vertex AI Search** directly for both catalog and techdocs works well for semantic parsing but introduces significant latency and cost overhead for simple keyword lookups in catalog data.
-- Running **Typesense** or **Elasticsearch** is highly efficient for catalog queries, but lacks built-in semantic search capabilities out-of-the-box (unless complex vector pipelines are built and maintained manually).
+A hybrid search routing architecture provides several operational advantages:
 
-### The Hybrid Solution
-
-The **Hybrid Search Workspace** implements a routed multi-engine search architecture. It separates catalog lookup from semantic document retrieval by routing search types to dedicated engines:
-
-- **Typesense** acts as the fast database engine for structured catalog search.
-- **Vertex AI Search** acts as the semantic engine for TechDocs search.
+1.  **Performance & Query Isolation**: Simple, fast keyword queries (e.g., database entity lookups) can be routed to a high-speed, low-latency engine. Heavy, resource-intensive document lookups (e.g., concept-based prose searching) can be routed to a semantic engine. Isolating these queries prevents resource starvation and keeps portal search responsive.
+2.  **Granular Search Configurations**: Operators can define completely separate ranking parameters, text normalization rules, boosting factors, and indexing schemas for each document type, customizing the search experience for different content.
+3.  **Infrastructure Decoupling**: Downstream search backends can be scaled, maintained, and configured independently. An outage or high load on one engine does not take down the search capabilities of other document categories.
 
 ### Workspace Component Relationships
 
-The workspace consists of four modular packages that decouple search querying, engine registration, and index ingestion:
+The workspace consists of modular packages that decouple search querying, engine registration, and index ingestion:
 
 ```mermaid
 graph TD
@@ -35,8 +30,8 @@ graph TD
     BS --> Router[Hybrid Search Router]
 
     subgraph Standalone / Hybrid Engines
-        Router -->|catalog queries| TS[Typesense Search Module]
-        Router -->|techdocs queries| VAI[Vertex AI Search Module]
+        Router -->|catalog queries| TS[Search Engine A]
+        Router -->|techdocs queries| VAI[Search Engine B]
     end
 
     GCS[(GCS Bucket)] -- finalize event --> Eventarc[GCS Eventarc Webhook Ingress]
@@ -50,7 +45,7 @@ graph TD
 
 ## 2. Query Orchestration: The Hybrid Search Router
 
-The query orchestration layer is implemented in the `@backstage-community/plugin-search-backend-module-hybrid` package. It acts as an query-routing proxy.
+The query orchestration layer is implemented in the `@backstage-community/plugin-search-backend-module-hybrid` package. It acts as a query-routing proxy.
 
 ### Routing Architecture
 
@@ -64,72 +59,53 @@ The router registers itself to the Backstage Search Service as a primary search 
 sequenceDiagram
     participant User as Backstage Search UI
     participant Router as Hybrid Search Router
-    participant TS as Typesense Search Module
-    participant VAI as Vertex AI Search Module
+    participant EngineA as Search Engine A
+    participant EngineB as Search Engine B
 
     User->>Router: Query (term: "typescript", types: ["software-catalog", "techdocs"])
     par Parallel Dispatch
-        Router->>TS: Search "typescript" in backstage_software-catalog
-        TS-->>Router: Return Catalog Results + Highlights
+        Router->>EngineA: Search "typescript" in software-catalog
+        EngineA-->>Router: Return Results + Highlights
     and
-        Router->>VAI: Search "typescript" in techdocs-datastore
-        VAI-->>Router: Return TechDocs Results + Extractive Answers
+        Router->>EngineB: Search "typescript" in techdocs
+        EngineB-->>Router: Return Results + Summaries
     end
     Router->>User: Merged Search Results (Ordered by relevance per type)
 ```
 
 ### Result Merging & Metadata Preservation
 
-Because different search engines return distinct response structures (e.g., Typesense returns highlighted matching words, while Vertex AI Search returns AI-generated extractive answers and segments), the router preserves these extensions. It appends the raw engine response attributes to the consolidated search response payload returned to the Backstage frontend, allowing the search UI to render rich search result cards dynamically.
+Because different search engines return distinct response structures (such as matching word highlights or AI-generated answers), the router preserves these extensions. It appends the raw engine response attributes to the consolidated search response payload returned to the Backstage frontend, allowing the search UI to render rich search result cards dynamically.
 
 ---
 
-## 3. Topology Options: Standalone vs. Hybrid Deployments
+## 3. Topology Options: Standalone vs. Routed Hybrid Deployments
 
-The workspace is designed to be highly flexible, offering operators three main deployment topologies depending on their needs:
+The workspace is designed to be highly flexible, offering operators two main deployment topologies:
 
 ```mermaid
 graph TD
-    subgraph Topology 1: Standalone Typesense
-        BS_1[Backstage Backend] --> TS_1[Typesense Module]
-        TS_1 -->|Primary Engine| TS_Server[(Typesense Cluster)]
+    subgraph Topology 1: Standalone Deployment
+        BS_1[Backstage Backend] --> Engine_1[Search Engine Module]
+        Engine_1 -->|Primary Engine| Server[(Single Search Backend)]
     end
 
-    subgraph Topology 2: Standalone Vertex AI
-        BS_2[Backstage Backend] --> VAI_2[Vertex AI Module]
-        VAI_2 -->|Primary Engine| GCP_VAI[Google Vertex AI Search]
-    end
-
-    subgraph Topology 3: Routed Hybrid Search
+    subgraph Topology 2: Routed Hybrid Search
         BS_3[Backstage Backend] --> Router_3[Hybrid Router]
-        Router_3 -->|route catalog| TS_3[Typesense Module]
-        Router_3 -->|route techdocs| VAI_3[Vertex AI Module]
+        Router_3 -->|route type A| TS_3[Search Engine A]
+        Router_3 -->|route type B| VAI_3[Search Engine B]
     end
 ```
 
-### 1. Standalone Typesense Mode
+### 1. Standalone Mode
 
-- **Use Case**: Ideal for small-to-medium deployments or teams looking for an open-source, low-latency, and cost-effective search solution.
-- **Behavior**: Typesense handles all search index types. It provisions collections automatically using a wildcard regex schema `{ name: '.*', type: 'auto' }`.
+- **Concept**: A single search engine module is registered directly as the primary search engine for the portal. It handles all document types and queries.
+- **Use Case**: Ideal for simpler deployments or teams that want to centralize search infrastructure on a single backend (e.g. running only Typesense or only Vertex AI Search).
 
-### 2. Standalone Vertex AI Search Mode
+### 2. Routed Hybrid Search Mode
 
-- **Use Case**: Suitable for organizations that require natural language, conversational, or generative Q&A search capabilities across all content types in the portal.
-- **Behavior**: Vertex AI Search acts as the single primary backend.
-
-### 3. Routed Hybrid Search Mode
-
-- **Use Case**: The recommended production pattern for enterprise developer portals.
-- **Behavior**: Simple keyword search for catalog components is routed to Typesense, while semantic techdocs queries are routed to Vertex AI.
-
-### Decision Matrix
-
-| Metric                      | Standalone Typesense      | Standalone Vertex AI Search | Routed Hybrid Search           |
-| :-------------------------- | :------------------------ | :-------------------------- | :----------------------------- |
-| **Catalog Query Latency**   | Sub-millisecond (Fastest) | 100ms - 300ms               | Sub-millisecond                |
-| **TechDocs Search Quality** | Keyword-only              | Semantic / Concept (Best)   | Semantic / Concept             |
-| **GCP Cloud Cost**          | Zero (if self-hosted)     | High (per-query cost)       | Medium (only techdocs queries) |
-| **Setup Complexity**        | Low                       | Medium                      | High                           |
+- **Concept**: The Hybrid Search Router is registered as the primary search engine, delegating specific index types to different sub-engines behind the scenes.
+- **Use Case**: Recommended for enterprise developer portals containing diverse content types that benefit from query isolation and specialized search backends.
 
 ---
 
@@ -159,7 +135,7 @@ graph LR
     LocalBuilder[Backstage Build Job] -->|1. Upload search_index.json| GCS[(GCS Bucket)]
     GCS -->|2. object.v1.finalized event| Eventarc[Eventarc webhook]
     Eventarc -->|3. Trigger Ingestion| BS[Backstage Ingress Endpoint]
-    BS -->|4. Enrich & Index| VAI[(Vertex AI Search)]
+    BS -->|4. Enrich & Index| VAI[(Search Engine)]
 ```
 
 - **Advantages**:
