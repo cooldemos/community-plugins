@@ -165,6 +165,7 @@ search:
 For Search Engine instances running on the Basic tier (where generative extractive content is not supported), configure the `snippetSpec` block instead to retrieve standard highlighted keyword snippets:
 
 ```yaml
+# Configure under: search.engines.vertexai.types.<type>
 searchOptions:
   contentSearchSpec:
     snippetSpec:
