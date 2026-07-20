@@ -135,14 +135,12 @@ const backend = createBackend();
 // 1. Add the Hybrid search engine orchestrator
 backend.add(import('@backstage-community/plugin-search-backend-module-hybrid'));
 
-// 2. Add the sub-engine modules you wish to register
+// 2. Add the sub-engine modules you wish to register (using their hybrid entry points)
 backend.add(
-  import('@backstage-community/plugin-search-backend-module-typesense').then(
-    m => ({ default: m.searchModuleTypesenseHybridSearch }),
-  ),
+  import('@backstage-community/plugin-search-backend-module-typesense/hybrid'),
 );
 backend.add(
-  import('@backstage-community/plugin-search-backend-module-vertexai'),
+  import('@backstage-community/plugin-search-backend-module-vertexai/hybrid'),
 );
 
 // 3. (Optional) Add the companion ingestion webhook module if using Vertex AI Search
