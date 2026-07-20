@@ -160,8 +160,15 @@ search:
               extractiveContentSpec:
                 maxExtractiveAnswerCount: 1
                 maxExtractiveSegmentCount: 2
-              snippetSpec:
-                maxSnippetCount: 1
+```
+
+For Search Engine instances running on the Basic tier (where generative extractive content is not supported), configure the `snippetSpec` block instead to retrieve standard highlighted keyword snippets:
+
+```yaml
+searchOptions:
+  contentSearchSpec:
+    snippetSpec:
+      maxSnippetCount: 1
 ```
 
 ---
@@ -217,8 +224,6 @@ search:
             extractiveContentSpec:
               maxExtractiveAnswerCount: 1
               maxExtractiveSegmentCount: 2
-            snippetSpec:
-              maxSnippetCount: 1
 
       # Optional: Global default for direct local indexing streams
       indexing:
