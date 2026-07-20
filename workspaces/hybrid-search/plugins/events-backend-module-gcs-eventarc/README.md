@@ -73,7 +73,7 @@ When an Eventarc trigger is configured with a GKE Service destination, Eventarc 
 
 > [!IMPORTANT]
 >
-> **The Port 80 Constraint**: The GKE destination block for GCP Eventarc strictly routes events to port `80` and does not accept custom target port configurations. To support this, you **must** expose port `80` (Service port) in your Backstage Kubernetes Service configuration and map it to your container's port `7007` (Pod port) (see the Kubernetes configuration below).
+> **The Port 80 Constraint**: The GKE destination block for GCP Eventarc strictly routes events to port `80` and does not accept custom target port configurations. To support this, you **must** expose port `80` (Service port) in your Backstage Kubernetes Service configuration and map it to your container's port `7007` (Pod port) (see the [Kubernetes Service Mapping](#kubernetes-service-mapping) below).
 
 > [!WARNING]
 >
