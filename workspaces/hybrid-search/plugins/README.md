@@ -21,14 +21,14 @@ When a user executes a search, the **`HybridSearchEngine`** queries all matching
 - `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
 - `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
 
-### 3. Event-Driven Delta Ingestion (Vertex AI Search & TechDocs Specific)
+### 3. Event-Driven Ingestion & Reconciliation (Vertex AI & TechDocs Specific)
 
-For TechDocs document indexing in Vertex AI Search, synchronization can be fully real-time, decentralized, and event-driven:
+For TechDocs document indexing in Vertex AI Search, synchronization is real-time, decentralized, and event-driven:
 
-- **Real-time Webhook**: The [`events-backend-module-gcs-eventarc`](./events-backend-module-gcs-eventarc) module exposes a webhook endpoint `/api/events/gcs` that listens for bucket upload notifications from Google Eventarc.
-- **Two-Tier Throttled Ingestion**: When GCS notifies the webhook of an index change, the module fetches `search_index.json`, maps it to stable MD5 document IDs, and triggers concurrent imports. It uses `asyncPool` to throttle **spawning** of inline import requests (protecting connection sockets and Cloud API burst rate limits), but awaits all LRO promises in parallel using `Promise.all()` to let Google Cloud index the batches concurrently at maximum speed.
-- **Catalog Metadata Enrichment**: The module extracts the associated Backstage entity reference from the GCS directory path and queries the Backstage **`CatalogService`** (`catalogServiceRef`). It injects catalog metadata (like `owner`, `lifecycle`, `componentType`, and `annotations`) as structured attributes into the search documents, allowing rich filtering of semantic searches.
-- **Delta-Reconciliation**: It queries the GCS object version history to compare current and previous documents, automatically identifying and purging stale or deleted pages in parallel.
+- **Real-time Webhook**: Listens to bucket upload notifications from Google Eventarc to trigger document indexing immediately upon publication.
+- **Throttled Batch Ingestion**: Processes changed files, maps them to stable document IDs, and performs batch imports within API rate limits to protect resource bounds.
+- **Catalog Metadata Enrichment**: Automatically associates indexed documents with their Backstage catalog metadata to enrich search results with owner, lifecycle, and component annotations.
+- **Delta Reconciliation**: Compares current and historic index states to automatically detect and purge stale or deleted pages.
 
 ## 📦 Available Plugins & Modules
 
