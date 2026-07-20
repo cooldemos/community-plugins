@@ -129,7 +129,7 @@ git commit -m "docs: replace concrete sub-engine registration examples with hypo
 
 **Files:**
 
-- Modify: `workspaces/hybrid-search/plugins/README.md:1-20, 37-42`
+- Modify: `workspaces/hybrid-search/plugins/README.md:1-25, 37-42`
 
 **Interfaces:**
 
@@ -141,7 +141,8 @@ Modify `workspaces/hybrid-search/plugins/README.md` to:
 
 1. Replace the introductory paragraph on Line 3 to explain standalone deployment options.
 2. Rename the sub-engine list items on Lines 14-15 to use "Engine Module".
-3. Update the table rows for Vertex AI Search and Typesense Search (Lines 37-42) to rename them and describe standalone capabilities.
+3. Replace the "Parallel Query Orchestration & Consolidating Strategies" section (Lines 17-25) to simplify the parallel execution wording into a single intro sentence.
+4. Update the table rows for Vertex AI Search and Typesense Search (Lines 37-42) to rename them and describe standalone capabilities.
 
 Specifically:
 
@@ -156,6 +157,17 @@ This directory houses a collection of highly flexible search modules for Backsta
 ```markdown
 - **Vertex AI Search Engine Module** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
 - **Typesense Search Engine Module** ([`search-backend-module-typesense`](./search-backend-module-typesense))
+```
+
+- Query Orchestration & Consolidation Strategies section (Lines 17-25) replacement:
+
+```markdown
+### 2. Query Orchestration & Consolidation Strategies
+
+When a user executes a search, the **`HybridSearchEngine`** queries all matching registered backends in parallel and merges the results based on the configured strategy:
+
+- `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
+- `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
 ```
 
 - Table rows replacement (Lines 39-41):
@@ -180,5 +192,5 @@ Run:
 
 ```bash
 git add plugins/README.md
-git commit -m "docs: document standalone deployment mode in plugins README introduction and table"
+git commit -m "docs: document standalone deployment mode and simplify query orchestration section in plugins README"
 ```

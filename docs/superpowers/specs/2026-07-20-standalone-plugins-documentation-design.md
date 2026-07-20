@@ -10,6 +10,8 @@ The high-level workspace documentation for the hybrid search plugins (`search-ba
 - Update the descriptions for the "Typesense Search Engine Module" and "Vertex AI Search Engine Module" in the `## 📦 Workspace Plugins & Modules` table.
 - In `plugins/search-backend-module-hybrid/README.md`, fix the example code blocks for Typesense and Vertex AI search engine registration under the `### Concrete Examples` subsection to use the correct module names (`searchModuleTypesenseHybridSearch` and `searchModuleVertexAISearchHybrid`) and structure.
 - In `plugins/README.md`, update the module table entries for Typesense and Vertex AI search engines to rename them to match the module names and mention their standalone deployment capability.
+- In `plugins/README.md`, update the introductory paragraph to explain both standalone and hybrid modules capabilities.
+- In `plugins/README.md`, rename the bullet points under `### 1. Dynamic Engine Registry via Extension Points` from "Sub-Engine" to "Engine Module".
 
 ## 3. Detailed Changes Reference
 
@@ -33,13 +35,37 @@ Each search engine module in this workspace is designed to be highly flexible an
   Update description to:
   "Integrates Google Cloud Vertex AI Search into Backstage. Can be deployed as a standalone primary search engine or registered as a sub-engine to the Hybrid Router. Translates queries to Discovery Engine API requests and manages background catalog cleanup."
 
-### Table Row updates (workspaces/hybrid-search/plugins/README.md):
+### Plugins README Introduction and Table updates (workspaces/hybrid-search/plugins/README.md):
 
-- **Vertex AI Search Engine Module**:
+- **Introductory Paragraph**:
+  Replace with:
+  "This directory houses a collection of highly flexible search modules for Backstage. It supports standalone deployment of modern search backends (e.g. structured Typesense search or semantic Vertex AI Search) as primary engines, alongside an optional Hybrid Search Router that orchestrates parallel federated queries and dynamic result merging."
+
+- **Bullet points (Lines 14-15)**:
+  Replace with:
+
+  ```markdown
+  - **Vertex AI Search Engine Module** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
+  - **Typesense Search Engine Module** ([`search-backend-module-typesense`](./search-backend-module-typesense))
+  ```
+
+- **Query Orchestration & Consolidation Strategies section (Lines 17-25)**:
+  Replace with:
+
+  ```markdown
+  ### 2. Query Orchestration & Consolidation Strategies
+
+  When a user executes a search, the **`HybridSearchEngine`** queries all matching registered backends in parallel and merges the results based on the configured strategy:
+
+  - `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
+  - `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
+  ```
+
+- **Vertex AI Search Engine Module (Table)**:
   Rename to: `**Vertex AI Search Engine Module**`
   Update description to:
   `**Semantic Search**: Integrates Google Cloud Vertex AI Search. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Translates Backstage queries to Discovery Engine API calls.`
-- **Typesense Search Engine Module**:
+- **Typesense Search Engine Module (Table)**:
   Rename to: `**Typesense Search Engine Module**`
   Update description to:
   `**Structured Search**: Integrates Typesense capabilities. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Indexes and searches structured Backstage entities with typo-tolerance.`
