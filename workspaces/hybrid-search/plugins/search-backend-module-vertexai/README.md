@@ -14,9 +14,41 @@ This backend module integrates Google Cloud Vertex AI Search capabilities into B
 
 ---
 
-## Ingestion Bypass & Decoupled Indexing
+## General Configuration
 
-Standard Backstage installations parse and index TechDocs locally on the Node.js server, which can consume significant local resources. This architecture decouples query routing from ingestion:
+Regardless of the ingestion mode, you must configure the basic credentials and location settings for your index types in `app-config.yaml`:
+
+```yaml
+search:
+  engines:
+    vertexai:
+      types:
+        techdocs:
+          datastore:
+            projectId: your-project-id
+            datastoreId: backstage-techdocs
+            location: global
+```
+
+---
+
+## TechDocs Ingestion Architecture & Modes
+
+By default, standard Backstage installations parse and index TechDocs locally on the Node.js server. This module supports two ingestion modes depending on your requirements:
+
+### Option A: Direct Local Indexing (Standard Backstage Flow)
+
+In this mode, standard Backstage collators build and parse HTML files locally on your Node.js server and stream them directly to the Vertex AI Search API.
+
+- **When to use**: Simpler setups or local development.
+- **Configuration**: Set `indexing.enabled: true` in your configuration under `vertexai`.
+- **Requirements**: No additional companion plugins or specific storage publishers are required.
+
+---
+
+### Option B: Decoupled Ingestion Pipeline (Recommended for Production)
+
+In this mode, local document building and parsing are bypassed on the Node.js server. Instead, documentation is built in CI/CD, published to GCS, and ingested into Vertex AI Search via Eventarc.
 
 ```mermaid
 graph LR
@@ -36,53 +68,20 @@ graph LR
     style DecoupledPipeline fill:#11151c,stroke:#00e676,stroke-width:2px,color:#ffffff
 ```
 
+#### How it Works:
+
 1. **Bypass Stream**: The standard indexer returns a throwaway no-op stream, bypassing local document parsing.
 2. **Decoupled Ingestion**: Documentation builds publish `search_index.json` to GCS. This upload triggers an Eventarc webhook that parses the manifest and imports pages to Vertex AI Search (see the [gcs-eventarc plugin](../events-backend-module-gcs-eventarc/README.md)).
-3. **Semantic Querying**: Queries route to the Vertex AI Search data store.
+3. **Semantic Querying**: Queries route directly to the Vertex AI Search data store.
 
----
-
-## Integration Dependencies & Configuration
-
-The configuration and package dependencies of this module depend on whether you are using direct local indexing or the decoupled ingestion pipeline.
-
-### 1. General Configuration (`app-config.yaml`)
-
-Regardless of the ingestion mode, you must configure the basic credentials and locations for your index types:
-
-```yaml
-search:
-  engines:
-    vertexai:
-      types:
-        techdocs:
-          datastore:
-            projectId: your-project-id
-            datastoreId: backstage-techdocs
-            location: global
-```
-
-### 2. TechDocs Ingestion Modes
-
-You can ingest TechDocs documents into Vertex AI Search using one of two modes:
-
-#### Option A: Direct Local Indexing (Standard Backstage Flow)
-
-In this mode, standard Backstage collators build and parse HTML files locally on your Node.js server and stream them directly to the Vertex AI Search API.
-
-- **Requirements**: No additional companion plugins or specific storage publishers are required.
-- **Configuration**: Set `indexing.enabled: true` in your configuration.
-
-#### Option B: Decoupled Ingestion Pipeline (Recommended for Production)
-
-In this mode, local document building and parsing are bypassed on the Node.js server. Instead, documentation is built in CI/CD, published to GCS, and ingested into Vertex AI Search via Eventarc.
+#### Requirements & Setup:
 
 - **Configuration Settings (`app-config.yaml`)**:
   - `techdocs.publisher.type` must be set to `googleGcs`.
   - `techdocs.publisher.googleGcs.bucketName` must be set to your GCS bucket name.
 - **Package Dependencies (`package.json`)**:
-  - **`@backstage-community/plugin-events-backend-module-gcs-eventarc`** (Required): Installs the webhook receiver that listens for Eventarc bucket upload events to trigger ingestion.
-  - **`@backstage/plugin-search-backend-module-techdocs`** (Required): The standard collator must be present; the Vertex AI module will automatically intercept its indexing stream to prevent local parsing.
+  - **`@backstage-community/plugin-events-backend-module-gcs-eventarc`** (Required): Webhook receiver that listens for GCS bucket upload events.
+  - **`@backstage/plugin-search-backend-module-techdocs`** (Required): The standard collator must be present so that the Vertex AI module can intercept its indexing stream.
 
 ---
 
