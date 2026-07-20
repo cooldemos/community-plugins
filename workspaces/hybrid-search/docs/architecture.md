@@ -133,7 +133,7 @@ graph TD
 
 ### Option B: Decoupled Ingestion Pipeline (Asynchronous Push)
 
-This is the recommended production pattern for real-time, lightweight ingestion. The build pipeline compiles TechDocs, generates a `search_index.json` file, and uploads it to GCS. The upload triggers a GCS Eventarc finalized event, notifying the Backstage Webhook Receiver. Backstage immediately fetches the pre-built index file from GCS, enriches it, and pushes it to the search engine.
+This is the recommended production pattern for real-time, lightweight ingestion. The build pipeline compiles TechDocs and uploads all compiled site assets (HTML pages, CSS, JS, images) along with the `search_index.json` file to GCS. However, to prevent Eventarc from triggering multiple redundant webhooks for a single TechDocs build event, the Eventarc trigger is scoped to specifically monitor changes **only** to the `search_index.json` file path. Upon finalize, Eventarc notifies the Backstage Webhook Receiver, which fetches the pre-built index file from GCS, enriches it, and pushes it to the search engine.
 
 ```mermaid
 graph TD
