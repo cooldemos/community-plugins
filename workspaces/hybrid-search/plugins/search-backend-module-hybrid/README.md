@@ -156,18 +156,21 @@ Other backend modules can register their search engine implementations to the hy
 > - **If you are only using the pre-built sub-engines (Typesense / Vertex AI)**: You do not need to write this code. These modules are already fully implemented, and you only need to import them in your Backstage instance.
 > - **If you want to integrate a different search engine (e.g., Elasticsearch, Pg, etc.)**: You will need to implement a custom backend module following these examples to register your engine instance with the `hybridSearchEngineRegistryExtensionPoint`.
 
-### Concrete Examples
+### Example: Custom Search Engine Registration
 
-#### 1. Typesense Module Registration
+To register a custom search engine (e.g., Elasticsearch, PostgreSQL, etc.) with the Hybrid Search Router, create a custom search backend module that consumes the `hybridSearchEngineRegistryExtensionPoint`:
 
 ```typescript
-import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
+import {
+  coreServices,
+  createBackendModule,
+} from '@backstage/backend-plugin-api';
 import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { TypesenseSearchEngine } from '@backstage-community/plugin-search-backend-module-typesense';
+import { CustomSearchEngine } from './CustomSearchEngine'; // Your custom search engine class
 
-export const searchModuleTypesenseHybridSearch = createBackendModule({
+export const searchModuleCustomHybridSearch = createBackendModule({
   pluginId: 'search',
-  moduleId: 'typesense-hybrid-search',
+  moduleId: 'custom-hybrid-search',
   register(env) {
     env.registerInit({
       deps: {
@@ -176,76 +179,25 @@ export const searchModuleTypesenseHybridSearch = createBackendModule({
         logger: coreServices.logger,
       },
       async init({ hybridRegistry, config, logger }) {
-        const typesenseSearchEngine = new TypesenseSearchEngine({ ... });
+        logger.info(
+          'Initializing Custom Search Engine for Hybrid Search Router.',
+        );
 
-        // Discover supported types from hybrid routing config
-        const routing = config.getOptional('search.engines.hybrid.routing') as
-          | Record<string, string>
-          | undefined;
-
-        const supportedTypes: string[] = [];
-        if (routing) {
-          for (const [type, engine] of Object.entries(routing)) {
-            if (engine === 'typesense') {
-              supportedTypes.push(type);
-            }
-          }
-        }
-
-        if (supportedTypes.length === 0) {
-          supportedTypes.push('software-catalog');
-        }
-
-        hybridRegistry.registerEngine('typesense', typesenseSearchEngine, {
-          supportsTypes: supportedTypes,
+        // Instantiate your custom search engine implementation
+        const customSearchEngine = new CustomSearchEngine({
+          logger,
+          config,
         });
-      },
-    });
-  },
-});
-```
 
-#### 2. Vertex AI Search Module Registration
-
-```typescript
-import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
-import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { VertexAISearchEngine } from '@backstage-community/plugin-search-backend-module-vertexai';
-
-export const searchModuleVertexAISearchHybrid = createBackendModule({
-  pluginId: 'search',
-  moduleId: 'vertexai-search-hybrid',
-  register(env) {
-    env.registerInit({
-      deps: {
-        hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
-        config: coreServices.rootConfig,
-        logger: coreServices.logger,
-      },
-      async init({ hybridRegistry, config, logger }) {
-        const vertexAiSearchEngine = new VertexAISearchEngine({ ... });
-
-        // Discover supported types from hybrid routing config
-        const routing = config.getOptional('search.engines.hybrid.routing') as
-          | Record<string, string>
-          | undefined;
-
-        const supportedTypes: string[] = [];
-        if (routing) {
-          for (const [type, engine] of Object.entries(routing)) {
-            if (engine === 'vertexai') {
-              supportedTypes.push(type);
-            }
-          }
-        }
-
-        if (supportedTypes.length === 0) {
-          supportedTypes.push('techdocs');
-        }
-
-        hybridRegistry.registerEngine('vertexai', vertexAiSearchEngine, {
-          supportsTypes: supportedTypes,
-        });
+        // Register the engine instance to the Hybrid Registry,
+        // specifying the document types (categories) it supports.
+        hybridRegistry.registerEngine(
+          'custom-engine-name',
+          customSearchEngine,
+          {
+            supportsTypes: ['software-catalog', 'custom-type'],
+          },
+        );
       },
     });
   },
