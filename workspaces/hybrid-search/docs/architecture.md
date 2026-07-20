@@ -111,16 +111,16 @@ graph TD
 
 ## 4. TechDocs Ingestion Architectures
 
-TechDocs generates static HTML pages via MkDocs. In order to search these documents, they must be parsed, chunked, and ingested into the search engine. This workspace supports two ingestion architectures:
+TechDocs generates static assets via MkDocs. This build step compiles a pre-parsed `search_index.json` file containing all the documentation text for a component. Backstage supports two ingestion architectures to index this JSON file:
 
 ### Option A: Standard Collator-Based Indexing (Synchronous Pull)
 
-In this mode, the build pipeline compiles TechDocs and uploads the static files to a storage bucket (GCS). Backstage's search backend runs a scheduled indexing loop using the standard `DefaultTechDocsCollatorFactory`. This collator periodically downloads the compiled TechDocs files from the storage bucket, parses them, and indexes them into the search engine backend.
+In this mode, the build pipeline compiles TechDocs and uploads the static files (including `search_index.json`) to a storage bucket (GCS). Backstage's search backend runs a scheduled indexing loop using the standard `DefaultTechDocsCollatorFactory`. This collator periodically downloads the compiled `search_index.json` files from GCS and indexes them.
 
 ```mermaid
 graph TD
-    Pipeline[CI/CD Build Pipeline] -->|1. Upload HTML/JSON| GCS[(TechDocs Storage Bucket)]
-    BS[Backstage Backend <br> runs TechDocs Collator] -->|2. Pull / Read Docs| GCS
+    Pipeline[CI/CD Build Pipeline] -->|1. Upload search_index.json| GCS[(TechDocs Storage Bucket)]
+    BS[Backstage Backend <br> runs TechDocs Collator] -->|2. Pull / Read Index| GCS
     BS -->|3. Index Documents| SearchEngine[(Search Engine API)]
 ```
 
@@ -129,7 +129,7 @@ graph TD
   - Simple deployment; requires no external cloud events or webhook listener configuration.
 - **Disadvantages**:
   - **Scheduled Delay**: Indexing runs on a schedule, meaning search content updates are not real-time.
-  - **Resource Usage**: Downloading and parsing HTML pages runs inside the Backstage backend process, causing periodic CPU and network spikes.
+  - **Bulk Processing Overhead**: The collator periodically pulls and indexes documentation search indices in bulk, which can cause memory and network utilization spikes on the Backstage backend.
 
 ### Option B: Decoupled Ingestion Pipeline (Asynchronous Push)
 
@@ -145,7 +145,7 @@ graph TD
 ```
 
 - **Advantages**:
-  - **Build Isolation & Performance**: The heavy HTML parsing happens in the build job, keeping Backstage backend overhead minimal.
+  - **Incremental Processing**: Backstage only fetches and processes the specific `search_index.json` file that was updated, avoiding bulk-polling overhead and network spikes.
   - **Real-time Updates**: Search indices are updated instantly upon GCS upload.
   - **Catalog Metadata Enrichment**: Enables Backstage to query the Catalog Service to enrich index documents with entity catalog metadata (owner, lifecycle, tags) before indexing.
 - **Disadvantages**:
