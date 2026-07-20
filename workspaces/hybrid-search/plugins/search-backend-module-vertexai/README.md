@@ -231,7 +231,7 @@ search:
             location: europe-west4
           # Inherits global default (indexing.enabled: true)
 
-      # Configurable catalog cleanup task
+      # Configurable catalog cleanup task (automatically disabled/ignored if indexing.enabled is set to true)
       cleanup:
         enabled: true
         frequency: { hours: 2 } # optional, defaults to 2 hours
