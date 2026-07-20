@@ -269,4 +269,32 @@ Run:
 ```bash
 git add plugins/search-backend-module-typesense/README.md
 git commit -m "docs: add custom collection vector schema configuration example to Typesense README"
+```
+```
+
+## Task 6: Simplify Eventarc Service Agent IAM Description in GCS Eventarc README
+
+### Description
+Simplify the GCP Service Accounts & IAM Roles list under the Eventarc Service Agent section by stating once at the group level that it is only required for GKE destinations, instead of repeating it for each individual permission.
+
+**Acceptable files:**
+- `workspaces/hybrid-search/plugins/events-backend-module-gcs-eventarc/README.md`
+
+**Step 1: Modify workspaces/hybrid-search/plugins/events-backend-module-gcs-eventarc/README.md**
+Rewrite lines 477-480 to use a group-level GKE requirement suffix and remove the individual suffixes from the list items.
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write plugins/events-backend-module-gcs-eventarc/README.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check plugins/events-backend-module-gcs-eventarc/README.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add plugins/events-backend-module-gcs-eventarc/README.md
+git commit -m "docs: simplify Eventarc Service Agent IAM roles layout in GCS Eventarc README"
+```
+`
 ````
