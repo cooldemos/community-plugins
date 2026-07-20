@@ -26,7 +26,7 @@ This module implements a **buffered writable stream** to optimize this flow:
 
 To eliminate the need to pre-define schemas for every Backstage document type, this module implements an **auto-provisioning wildcard schema strategy**:
 
-- **Assertion Check**: When the indexing task starts (`getIndexer(type)`), the engine checks if a corresponding Typesense collection named `backstage_${type}` exists.
+- **Assertion Check**: When the indexing task starts, the engine checks if a corresponding Typesense collection named `backstage_${type}` exists.
 - **Auto-Creation on 404**: If the collection is missing, the engine catches the error and creates it on-the-fly.
 - **Wildcard Fallback**: The collection is created with a regex wildcard field rule: `{ "name": ".*", "type": "auto" }`. This instructs Typesense to automatically analyze incoming field datatypes (strings, integers, arrays, etc.) and dynamically construct the schema as documents are ingested.
 
@@ -36,6 +36,28 @@ To allow full access to Typesense's advanced capabilities (such as connection ma
 
 - **Client Connection Options**: Any key-value pairs defined under `clientOptions` in `app-config.yaml` are forwarded directly to the constructor of the underlying `typesense` client library.
 - **Custom Collection Schemas**: When a collection is created, you can specify custom field schemas inside the `collections` configuration block (e.g. to enable built-in vector/semantic search using `ts/all-MiniLM-L6-v2` embedding models).
+
+  _Example configuration enabling a custom vector field:_
+
+  ```yaml
+  search:
+    engines:
+      typesense:
+        collections:
+          techdocs:
+            fields:
+              - name: '.*'
+                type: 'auto'
+              - name: embedding
+                type: 'float[]'
+                num_dim: 384
+                embed:
+                  from:
+                    - text
+                  model_config:
+                    model_name: 'ts/all-MiniLM-L6-v2'
+  ```
+
 - **Custom Query Options**: Any properties defined under `searchOptions` are merged directly into the query payload sent to the Typesense search endpoint (e.g. custom `query_by` fields).
 
 ---
