@@ -322,6 +322,33 @@ Run:
 git add plugins/events-backend-module-gcs-eventarc/README.md
 git commit -m "docs: document Eventarc Dead-Letter Topic (DLQ) configuration in GCS Eventarc README"
 ```
+```
+
+## Task 8: Standardize Alert Blocks in GCS Eventarc README
+
+### Description
+Standardize all markdown alert blocks in the GCS Eventarc Events module README to use proper multiline syntax with blank lines separating the alert identifiers from the header text (fixing standard alert rendering issues).
+
+**Acceptable files:**
+- `workspaces/hybrid-search/plugins/events-backend-module-gcs-eventarc/README.md`
+
+**Step 1: Modify workspaces/hybrid-search/plugins/events-backend-module-gcs-eventarc/README.md**
+Find and replace all single-line `> [!IMPORTANT] > **...**:` or `> [!WARNING] > **...**:` or `> [!NOTE] > **...**:` blocks with proper multiline alert blockquotes.
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write plugins/events-backend-module-gcs-eventarc/README.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check plugins/events-backend-module-gcs-eventarc/README.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add plugins/events-backend-module-gcs-eventarc/README.md
+git commit -m "docs: format markdown alert blocks to standard multiline syntax in GCS Eventarc README"
+```
+
 
 `
 ````
