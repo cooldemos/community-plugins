@@ -2,6 +2,8 @@
 
 This workspace hosts a modular hybrid search architecture for Backstage. It allows routing queries to different search engines (such as Vertex AI, Typesense, or others) in parallel based on the requested categories, and dynamically merging the search results into a single unified search experience.
 
+For a detailed conceptual and architectural explanation of this workspace (including query orchestration, deployment topologies, techdocs ingestion paths, webhook security models, and catalog metadata enrichment details), see the [Architecture & Design Explanation](docs/architecture.md).
+
 ---
 
 ## 🏛️ High-Level Architecture
