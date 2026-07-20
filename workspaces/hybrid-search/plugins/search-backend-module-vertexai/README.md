@@ -14,24 +14,6 @@ This backend module integrates Google Cloud Vertex AI Search capabilities into B
 
 ---
 
-## General Configuration
-
-Regardless of the ingestion mode, you must configure the basic credentials and location settings for your index types in `app-config.yaml`:
-
-```yaml
-search:
-  engines:
-    vertexai:
-      types:
-        techdocs:
-          datastore:
-            projectId: your-project-id
-            datastoreId: backstage-techdocs
-            location: global
-```
-
----
-
 ## TechDocs Ingestion Architecture & Modes
 
 By default, standard Backstage installations parse and index TechDocs locally on the Node.js server. This module supports two ingestion modes depending on your requirements:
