@@ -60,7 +60,7 @@ When enabled:
     - **Signature & Validity**: The token is valid and cryptographically signed by Google.
     - **Issuer**: Must match `https://accounts.google.com`.
     - **Audience**: Matches the Backstage base path: `${baseUrl}/api/events/gcs`.
-    - **Service Account Verification**: If configured, it ensures the token belongs exclusively to the expected GKE/Eventarc service account email (`events.modules.gcsEventarcWebhook.oidc.serviceAccountEmail`).
+    - **Service Account Verification**: If configured, it ensures the token belongs exclusively to the expected Eventarc service account email (`events.modules.gcsEventarcWebhook.oidc.serviceAccountEmail`).
 
 ---
 
@@ -81,7 +81,7 @@ When an Eventarc trigger is configured with a GKE Service destination, Eventarc 
 > [!NOTE] > **Why the OIDC Verification Code is Retained**:
 > Despite being disabled for GKE internal VPC routing, the OIDC token verification logic is fully supported and retained in the codebase to support:
 >
-> - **Public Cloud Run / Serverless Deployments**: If Backstage is deployed on Google Cloud Run or App Engine (where the endpoint is exposed as a public HTTPS URL), enabling OIDC is **highly recommended** (and often mandatory) to cryptographically verify that all incoming webhooks originate genuinely from your Google Cloud Eventarc trigger, preventing public index spoofing.
+> - **Public Cloud Run / Serverless Deployments**: If Backstage is deployed on Google Cloud Run (where the endpoint is exposed as a public HTTPS URL), enabling OIDC is **highly recommended** (and often mandatory) to cryptographically verify that all incoming webhooks originate genuinely from your Google Cloud Eventarc trigger, preventing public index spoofing.
 > - **Future-Proofing**: If the GKE Eventarc forwarder introduces support for token forwarding in the future, verification can be turned back on instantly via a config change (`enabled: true`) without requiring code modifications.
 
 ---
@@ -474,10 +474,10 @@ resource "google_eventarc_trigger" "gcs_to_backstage_run" {
 >
 >    - **`roles/pubsub.publisher`** on the GCP project (allows GCS to publish file events to Eventarc's Pub/Sub topics).
 >
-> 3. **Eventarc Service Agent** (`service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com`):
->    - **`roles/compute.viewer`** on the GCP project (only required for **GKE** destinations to query cluster metadata).
->    - **`roles/container.developer`** on the GKE cluster (only required for **GKE** destinations to deploy GKE forwarders).
->    - **`roles/iam.serviceAccountAdmin`** on the Eventarc Trigger Service Account (only required for **GKE** destinations to link the SA to GKE forwarders).
+> 3. **Eventarc Service Agent** (`service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com`) — _Only required for GKE destinations_:
+>    - **`roles/compute.viewer`** on the GCP project to query cluster metadata.
+>    - **`roles/container.developer`** on the GKE cluster to deploy GKE forwarders.
+>    - **`roles/iam.serviceAccountAdmin`** on the Eventarc Trigger Service Account to link the SA to GKE forwarders.
 
 ### Customer-Managed Encryption Keys (CMEK) Support
 
