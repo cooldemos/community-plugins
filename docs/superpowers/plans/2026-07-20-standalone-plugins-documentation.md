@@ -402,6 +402,36 @@ Run:
 git add docs/architecture.md
 git commit -m "docs: correct techdocs ingestion architecture flow in docs/architecture.md"
 ```
+```
+
+## Task 11: Correct TechDocs Ingestion Performance Descriptions in docs/architecture.md
+
+### Description
+Update the advantages/disadvantages descriptions under both Option A and Option B in `docs/architecture.md` to remove any reference to "HTML parsing" on the Backstage backend or build pipeline. Clarify that:
+- Both modes read and process the pre-built `search_index.json` compiled by the MkDocs build step.
+- Option A runs bulk indexing periodically on a schedule, leading to spikes in memory and processing load on the Backstage backend.
+- Option B processes document changes incrementally in real-time, only fetching and processing the specific `search_index.json` that was modified.
+
+**Acceptable files:**
+- `workspaces/hybrid-search/docs/architecture.md`
+
+**Step 1: Modify workspaces/hybrid-search/docs/architecture.md**
+Update Option A and Option B advantage/disadvantage bullets to reflect the correct resource scaling profiles (bulk scheduled polling vs. incremental event-driven processing).
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write docs/architecture.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check docs/architecture.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add docs/architecture.md
+git commit -m "docs: correct techdocs ingestion performance descriptions in docs/architecture.md"
+```
+
 
 
 
