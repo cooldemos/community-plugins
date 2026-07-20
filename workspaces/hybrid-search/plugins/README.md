@@ -14,14 +14,12 @@ Specialized backend search modules plug into this extension point to self-regist
 - **Vertex AI Search Engine Module** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
 - **Typesense Search Engine Module** ([`search-backend-module-typesense`](./search-backend-module-typesense))
 
-### 2. Parallel Query Orchestration & Consolidating Strategies
+### 2. Query Orchestration & Consolidation Strategies
 
-When a user executes a search, the **`HybridSearchEngine`** coordinates the query path:
+When a user executes a search, the **`HybridSearchEngine`** queries all matching registered backends in parallel and merges the results based on the configured strategy:
 
-- **Parallel Execution**: The router executes queries **in parallel** (`Promise.all()`) across all matching registered backends to minimize response latency.
-- **Consolidation Strategies**: Once results are collected, they are merged based on the configured strategy:
-  - `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
-  - `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
+- `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
+- `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
 
 ### 3. Event-Driven Delta Ingestion (Vertex AI Search & TechDocs Specific)
 
