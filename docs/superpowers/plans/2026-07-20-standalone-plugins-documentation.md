@@ -125,11 +125,11 @@ git commit -m "docs: replace concrete sub-engine registration examples with hypo
 
 ---
 
-### Task 3: Update plugins/README.md Table
+### Task 3: Update plugins/README.md Table and Introduction
 
 **Files:**
 
-- Modify: `workspaces/hybrid-search/plugins/README.md:37-42`
+- Modify: `workspaces/hybrid-search/plugins/README.md:1-20, 37-42`
 
 **Interfaces:**
 
@@ -137,17 +137,28 @@ git commit -m "docs: replace concrete sub-engine registration examples with hypo
 
 - [ ] **Step 1: Modify workspaces/hybrid-search/plugins/README.md**
 
-Modify the table rows for Vertex AI Search and Typesense Search in `workspaces/hybrid-search/plugins/README.md`:
-Rename the columns and rewrite the descriptions to emphasize their standalone capabilities and correct naming.
+Modify `workspaces/hybrid-search/plugins/README.md` to:
 
-Specifically, replace:
+1. Replace the introductory paragraph on Line 3 to explain standalone deployment options.
+2. Rename the sub-engine list items on Lines 14-15 to use "Engine Module".
+3. Update the table rows for Vertex AI Search and Typesense Search (Lines 37-42) to rename them and describe standalone capabilities.
+
+Specifically:
+
+- Intro paragraph (Line 3) replacement:
 
 ```markdown
-| **Vertex AI Search Sub-Engine** | [`search-backend-module-vertexai`](./search-backend-module-vertexai/README.md) | **Semantic Search**: Sub-engine that translates Backstage search queries to Google Discovery Engine API calls, supporting semantic search across any configured unstructured or structured indices. |
-| **Typesense Search Sub-Engine** | [`search-backend-module-typesense`](./search-backend-module-typesense/README.md) | **Structured Search**: Sub-engine that indexes and searches structured Backstage entities (such as catalog components, API definitions, or custom indices) with typo-tolerance. |
+This directory houses a collection of highly flexible search modules for Backstage. It supports standalone deployment of modern search backends (e.g. structured Typesense search or semantic Vertex AI Search) as primary engines, alongside an optional Hybrid Search Router that orchestrates parallel federated queries and dynamic result merging.
 ```
 
-With:
+- List items replacement (Lines 14-15):
+
+```markdown
+- **Vertex AI Search Engine Module** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
+- **Typesense Search Engine Module** ([`search-backend-module-typesense`](./search-backend-module-typesense))
+```
+
+- Table rows replacement (Lines 39-41):
 
 ```markdown
 | **Vertex AI Search Engine Module** | [`search-backend-module-vertexai`](./search-backend-module-vertexai/README.md) | **Semantic Search**: Integrates Google Cloud Vertex AI Search. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Translates Backstage queries to Discovery Engine API calls. |
@@ -169,5 +180,5 @@ Run:
 
 ```bash
 git add plugins/README.md
-git commit -m "docs: document standalone deployment mode in plugins README table"
+git commit -m "docs: document standalone deployment mode in plugins README introduction and table"
 ```
