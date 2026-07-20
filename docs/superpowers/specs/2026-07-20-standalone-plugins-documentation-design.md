@@ -13,6 +13,7 @@ The high-level workspace documentation for the hybrid search plugins (`search-ba
 - In `plugins/README.md`, update the introductory paragraph to explain both standalone and hybrid modules capabilities.
 - In `plugins/README.md`, rename the bullet points under `### 1. Dynamic Engine Registry via Extension Points` from "Sub-Engine" to "Engine Module".
 - In `plugins/README.md`, simplify the "Event-Driven Delta Ingestion" section to remove code-level details like `asyncPool`, `Promise.all()`, and backend service references.
+- In `plugins/search-backend-module-vertexai/README.md`, rewrite the documentation to remove salesy or marketing-oriented language, sticking purely to factual, technical descriptions.
 
 ## 3. Detailed Changes Reference
 
@@ -132,6 +133,15 @@ export const searchModuleCustomHybridSearch = createBackendModule({
   },
 });
 ```
+
+### Vertex AI Search Backend Module README Tone Adjustments:
+
+In `plugins/search-backend-module-vertexai/README.md`:
+
+- Eliminate marketing emojis (e.g. 🌟, ⚡, 🔀, 🧹, 🔌, 🔍, 🏛️, ⚙️, 🔗, 📦, 📄, ❓, 🔑).
+- Remove words like "seamlessly", "high-performance", "Zero hardcoding!", "Infinite Custom Type Extensibility", "Infinite", "beautifully blended", "massive CPU/memory overhead", "effortless", etc.
+- Stick to factual descriptions. Instead of "Zero hardcoding! You can dynamically map...", say: "Maps custom Backstage document types (e.g., `techdocs`, `software-catalog`) to individual Google Cloud Data Stores and Search Apps in the configuration."
+- In the Ingestion Bypass section, explain standard TechDocs parsing and indexing in Backstage compared to the decoupled mode without using terms like "Safely Discarded / Black-Hole" or "No CPU Overhead".
 
 ## 4. Verification Plan
 

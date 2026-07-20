@@ -208,3 +208,37 @@ Run:
 git add plugins/README.md
 git commit -m "docs: document standalone deployment mode and simplify query orchestration and event-driven sections in plugins README"
 ```
+
+---
+
+### Task 4: De-salesify Vertex AI Search Backend Module README
+
+**Files:**
+
+- Modify: `workspaces/hybrid-search/plugins/search-backend-module-vertexai/README.md`
+
+**Interfaces:**
+
+- N/A
+
+- [ ] **Step 1: Modify workspaces/hybrid-search/plugins/search-backend-module-vertexai/README.md**
+      Rewrite the file to remove salesy or promotional wording:
+
+1. Replace emojis from header titles and bullet points.
+2. Rephrase sentences to be passive, technical, and objective (e.g., replace "Zero hardcoding!" with configuration details).
+3. Update the ingestion bypass diagram and description to focus on decoupled flow without hype terms.
+
+- [ ] **Step 2: Run prettier to format the updated markdown file**
+      Run: `npx prettier --write plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.
+
+- [ ] **Step 3: Run prettier check to verify formatting is clean**
+      Run: `npx prettier --check plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.
+      Expected: file passes the check.
+
+- [ ] **Step 4: Commit the changes**
+      Run:
+
+```bash
+git add plugins/search-backend-module-vertexai/README.md
+git commit -m "docs: remove salesy tone and stick to technical facts in Vertex AI search engine README"
+```
