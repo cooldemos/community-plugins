@@ -144,6 +144,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - In the Ingestion Bypass section, explain standard TechDocs parsing and indexing in Backstage compared to the decoupled mode without using terms like "Safely Discarded / Black-Hole" or "No CPU Overhead".
 - Restructure the "Required Integration Dependencies" section to clearly separate general configuration settings from TechDocs Ingestion Modes (Direct Local Indexing vs. Decoupled Ingestion Pipeline), clarifying that Eventarc and GCS publisher settings are only needed for Decoupled mode.
 - In the Core Features list, refine the "Direct Local Indexing" description to explain the behavior conceptually without mentioning the `VertexAIWritableStream` class name.
+- Combine the "Ingestion Bypass & Decoupled Indexing" section and the "TechDocs Ingestion Modes" section under a unified "TechDocs Ingestion Architecture & Modes" header, nesting the bypass explanation, mermaid diagram, and decoupled pipeline requirements cleanly under Option B (Decoupled Ingestion Pipeline).
 
 ## 4. Verification Plan
 

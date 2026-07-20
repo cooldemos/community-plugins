@@ -229,6 +229,7 @@ git commit -m "docs: document standalone deployment mode and simplify query orch
 3. Update the ingestion bypass diagram and description to focus on decoupled flow without hype terms.
 4. Restructure the "Required Integration Dependencies" section to clearly separate general configuration settings from TechDocs Ingestion Modes (Direct Local Indexing vs. Decoupled Ingestion Pipeline).
 5. Refine the "Direct Local Indexing" feature description to describe its behavior conceptually and remove the `VertexAIWritableStream` class name.
+6. Combine the Ingestion Bypass and Ingestion Modes sections under a unified TechDocs Ingestion Architecture & Modes header, nesting bypass details under Option B.
 
 - [ ] **Step 2: Run prettier to format the updated markdown file**
       Run: `npx prettier --write plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.
