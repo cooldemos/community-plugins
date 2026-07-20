@@ -154,6 +154,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - In the Typesense Search module README, add an example showing how to configure a custom collection schema (including a vector/semantic search field configuration) in the Configuration section under a dedicated sub-section, and reference it from the Custom Collection Schemas feature description.
 - In the GCS Eventarc Events module README, simplify the GCP Service Accounts & IAM Roles list under the Eventarc Service Agent section by stating once at the group level that it is only required for GKE destinations, instead of repeating it for each individual permission.
 - In the GCS Eventarc Events module README, add a new section documenting how to configure a Dead-Letter Topic (DLQ) to handle webhook delivery failures, detailing the necessary Terraform resources, Pub/Sub Service Agent IAM publisher role, and gcloud commands to attach the policy to the managed subscription.
+- In the workspace architecture explanation document (docs/architecture.md), present hybrid search routing and use cases conceptually. Remove detailed engine suitability comparisons (e.g. arguing Typesense is for catalog and Vertex AI for techdocs), and focus instead on general reasons why hybrid search is useful (such as backend isolation, query distribution, and modular resource scaling).
 
 ## 4. Verification Plan
 

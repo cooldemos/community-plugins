@@ -348,6 +348,33 @@ Run:
 git add plugins/events-backend-module-gcs-eventarc/README.md
 git commit -m "docs: format markdown alert blocks to standard multiline syntax in GCS Eventarc README"
 ```
+```
+
+## Task 9: Generalize Hybrid Search Architecture Document to Conceptual Focus
+
+### Description
+Refactor the workspace architecture explanation document (`docs/architecture.md`) to remove specific engine suitability arguments (e.g. Vertex AI is for techdocs and Typesense for catalog). Explain hybrid search as a conceptual capability and focus on general advantages (query isolation, backend decoupling, custom requirements per index, and performance optimization).
+
+**Acceptable files:**
+- `workspaces/hybrid-search/docs/architecture.md`
+
+**Step 1: Modify workspaces/hybrid-search/docs/architecture.md**
+Rewrite the introduction, high-level system architecture, and standalone mode descriptions to present general routing concepts and generic sub-engines instead of naming specific engine suitability constraints.
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write docs/architecture.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check docs/architecture.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add docs/architecture.md
+git commit -m "docs: generalize hybrid search architecture document to conceptual routing focus"
+```
+
 
 
 `
