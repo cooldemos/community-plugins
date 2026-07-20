@@ -153,6 +153,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Omit snippetSpec from the Standalone configuration example, showing only the recommended extractiveContentSpec block. Document snippetSpec and its format under the Extractive Content & Snippet Priority section as a basic-tier alternative.
 - In the Typesense Search module README, add an example showing how to configure a custom collection schema (including a vector/semantic search field configuration) in the Configuration section under a dedicated sub-section, and reference it from the Custom Collection Schemas feature description.
 - In the GCS Eventarc Events module README, simplify the GCP Service Accounts & IAM Roles list under the Eventarc Service Agent section by stating once at the group level that it is only required for GKE destinations, instead of repeating it for each individual permission.
+- In the GCS Eventarc Events module README, add a new section documenting how to configure a Dead-Letter Topic (DLQ) to handle webhook delivery failures, detailing the necessary Terraform resources, Pub/Sub Service Agent IAM publisher role, and gcloud commands to attach the policy to the managed subscription.
 
 ## 4. Verification Plan
 

@@ -296,5 +296,32 @@ Run:
 git add plugins/events-backend-module-gcs-eventarc/README.md
 git commit -m "docs: simplify Eventarc Service Agent IAM roles layout in GCS Eventarc README"
 ```
+```
+
+## Task 7: Document Eventarc Dead-Letter Topic Configuration
+
+### Description
+Add a new section documenting how to configure a Dead-Letter Topic (DLQ) to handle webhook delivery failures, detailing the necessary Terraform resources, Pub/Sub Service Agent IAM publisher role, and gcloud commands to attach the policy to the managed subscription.
+
+**Acceptable files:**
+- `workspaces/hybrid-search/plugins/events-backend-module-gcs-eventarc/README.md`
+
+**Step 1: Modify workspaces/hybrid-search/plugins/events-backend-module-gcs-eventarc/README.md**
+Add the `### Dead-Letter Topic Configuration (Handling Delivery Failures)` section with Terraform HCL and gcloud cli configuration steps.
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write plugins/events-backend-module-gcs-eventarc/README.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check plugins/events-backend-module-gcs-eventarc/README.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add plugins/events-backend-module-gcs-eventarc/README.md
+git commit -m "docs: document Eventarc Dead-Letter Topic (DLQ) configuration in GCS Eventarc README"
+```
+
 `
 ````
