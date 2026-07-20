@@ -72,7 +72,6 @@ graph LR
 
 1. **Bypass Stream**: The standard indexer returns a throwaway no-op stream, bypassing local document parsing.
 2. **Decoupled Ingestion**: Documentation builds publish `search_index.json` to GCS. This upload triggers an Eventarc webhook that parses the manifest and imports pages to Vertex AI Search (see the [gcs-eventarc plugin](../events-backend-module-gcs-eventarc/README.md)).
-3. **Semantic Querying**: Queries route directly to the Vertex AI Search data store.
 
 #### Requirements & Setup:
 
