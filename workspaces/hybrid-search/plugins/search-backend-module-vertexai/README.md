@@ -5,7 +5,7 @@ This backend module integrates Google Cloud Vertex AI Search capabilities into B
 ## Core Features
 
 - **Decoupled Semantic Querying**: Routes Backstage search requests to Vertex AI Search Apps and Data Stores, utilizing semantic search, spellcheck, autocomplete, and search answers.
-- **Direct Local Indexing (Optional)**: Provides a streaming writer (`VertexAIWritableStream`) that allows Backstage collators to index documents directly into Vertex AI.
+- **Direct Local Indexing (Optional)**: Allows standard Backstage search collator tasks (such as the Catalog collator) to index documents directly into Vertex AI Search. The module buffers and batches document objects during Backstage's scheduled indexing runs and sends them to the Vertex AI Search API. This is the default mechanism for indexing dynamic metadata like catalog entities.
 - **Custom Type Mapping**: Maps Backstage document types (such as `techdocs`, `software-catalog`, or custom types) to dedicated Google Cloud Data Stores and Search Apps in the configuration.
 - **Catalog Cleanup Sweeper**: Runs a background task to delete orphaned documentation assets from Google Cloud Storage (GCS) and Vertex AI Search when catalog entities are removed.
   > [!IMPORTANT] > **Sweeper Ingestion Dependency**: The cleanup sweeper task is only active when direct local indexing is disabled (`indexing.enabled = false`). If local indexing is enabled, catalog synchronization and deletions are handled by standard Backstage collator schedules.
