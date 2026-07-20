@@ -143,6 +143,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Stick to factual descriptions. Instead of "Zero hardcoding! You can dynamically map...", say: "Maps custom Backstage document types (e.g., `techdocs`, `software-catalog`) to individual Google Cloud Data Stores and Search Apps in the configuration."
 - In the Ingestion Bypass section, explain standard TechDocs parsing and indexing in Backstage compared to the decoupled mode without using terms like "Safely Discarded / Black-Hole" or "No CPU Overhead".
 - Restructure the "Required Integration Dependencies" section to clearly separate general configuration settings from TechDocs Ingestion Modes (Direct Local Indexing vs. Decoupled Ingestion Pipeline), clarifying that Eventarc and GCS publisher settings are only needed for Decoupled mode.
+- In the Core Features list, refine the "Direct Local Indexing" description to explain the behavior conceptually without mentioning the `VertexAIWritableStream` class name.
 
 ## 4. Verification Plan
 
