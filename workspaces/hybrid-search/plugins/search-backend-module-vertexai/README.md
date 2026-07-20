@@ -8,9 +8,6 @@ This backend module integrates Google Cloud Vertex AI Search capabilities into B
 - **Direct Local Indexing (Optional)**: Allows standard Backstage search collator tasks (such as the Catalog collator) to index documents directly into Vertex AI Search. The module buffers and batches document objects during Backstage's scheduled indexing runs and sends them to the Vertex AI Search API. This is the default mechanism for indexing dynamic metadata like catalog entities.
 - **Custom Type Mapping**: Maps Backstage document types (such as `techdocs`, `software-catalog`, or custom types) to dedicated Google Cloud Data Stores and Search Apps in the configuration.
 - **Catalog Cleanup Sweeper**: Runs a background task to delete orphaned documentation assets from Google Cloud Storage (GCS) and Vertex AI Search when catalog entities are removed.
-  > [!IMPORTANT] > **Sweeper Ingestion Dependency**: The cleanup sweeper task is only active when direct local indexing is disabled (`indexing.enabled = false`). If local indexing is enabled, catalog synchronization and deletions are handled by standard Backstage collator schedules.
-  >
-  > **Startup Delay**: To prevent race conditions where active files are deleted during startup before the catalog has finished bootstrapping, the sweeper incorporates a startup delay (defaults to 2 minutes) before starting its first sweep.
 
 ---
 
@@ -63,6 +60,10 @@ graph LR
 - **Package Dependencies (`package.json`)**:
   - **`@backstage-community/plugin-events-backend-module-gcs-eventarc`** (Required): Webhook receiver that listens for GCS bucket upload events.
   - **`@backstage/plugin-search-backend-module-techdocs`** (Required): The standard collator must be present so that the Vertex AI module can intercept its indexing stream.
+
+> [!IMPORTANT] > **Sweeper Ingestion Dependency**: The cleanup sweeper task is only active when direct local indexing is disabled (`indexing.enabled = false`). If local indexing is enabled, catalog synchronization and deletions are handled by standard Backstage collator schedules.
+>
+> **Startup Delay**: To prevent race conditions where active files are deleted during startup before the catalog has finished bootstrapping, the sweeper incorporates a startup delay (defaults to 2 minutes) before starting its first sweep.
 
 ---
 
