@@ -255,7 +255,7 @@ Add an example showing how to configure a custom collection schema (such as a ve
 - `workspaces/hybrid-search/plugins/search-backend-module-typesense/README.md`
 
 **Step 1: Modify workspaces/hybrid-search/plugins/search-backend-module-typesense/README.md**
-Add a yaml configuration code block under the `Custom Collection Schemas` list item showing a custom schema config (including the wildcard rule and an explicit vector field mapping).
+Add a dedicated "Custom Collection & Vector Search Configuration" subsection in the Configuration section showing a custom schema config (including the wildcard rule and an explicit vector field mapping), and reference it from the Custom Collection Schemas feature description in the features list.
 
 **Step 2: Run prettier to format the updated markdown file**
 Run: `npx prettier --write plugins/search-backend-module-typesense/README.md` in `workspaces/hybrid-search/`.
