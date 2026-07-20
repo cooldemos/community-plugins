@@ -163,7 +163,7 @@ Other backend modules can register their search engine implementations to the hy
 ```typescript
 import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
 import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { TypesenseSearchEngine } from './TypesenseSearchEngine';
+import { TypesenseSearchEngine } from '@backstage-community/plugin-search-backend-module-typesense';
 
 export const searchModuleTypesenseHybridSearch = createBackendModule({
   pluginId: 'search',
@@ -210,7 +210,7 @@ export const searchModuleTypesenseHybridSearch = createBackendModule({
 ```typescript
 import { coreServices, createBackendModule } from '@backstage/backend-plugin-api';
 import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { VertexAISearchEngine } from './VertexAISearchEngine';
+import { VertexAISearchEngine } from '@backstage-community/plugin-search-backend-module-vertexai';
 
 export const searchModuleVertexAISearchHybrid = createBackendModule({
   pluginId: 'search',
