@@ -1,6 +1,6 @@
 # Hybrid Search Plugins & Modules
 
-This directory contains the decoupled, modular hybrid search architecture for Backstage, designed to route search queries dynamically, consolidate multi-engine results, and synchronize indexes in real-time.
+This directory houses a collection of highly flexible search modules for Backstage. It supports standalone deployment of modern search backends (e.g. structured Typesense search or semantic Vertex AI Search) as primary engines, alongside an optional Hybrid Search Router that orchestrates parallel federated queries and dynamic result merging.
 
 ## 🏛️ Core Architectural Pillars (Grounded in Code)
 
@@ -11,8 +11,8 @@ Our workspace is built around three core architectural pillars:
 To maintain decoupling, the router module [`search-backend-module-hybrid`](./search-backend-module-hybrid) does not hardcode sub-engines. Instead, it registers them dynamically during backend startup using a custom Backstage Extension Point: **`hybridSearchRegistryExtensionPoint`**.
 Specialized backend search modules plug into this extension point to self-register:
 
-- **Vertex AI Search Sub-Engine** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
-- **Typesense Search Sub-Engine** ([`search-backend-module-typesense`](./search-backend-module-typesense))
+- **Vertex AI Search Engine Module** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
+- **Typesense Search Engine Module** ([`search-backend-module-typesense`](./search-backend-module-typesense))
 
 ### 2. Parallel Query Orchestration & Consolidating Strategies
 
