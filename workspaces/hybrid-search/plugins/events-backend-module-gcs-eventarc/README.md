@@ -71,14 +71,20 @@ When an Eventarc trigger is configured with a GKE Service destination, Eventarc 
 1. Google's Eventarc agent automatically provisions a dedicated namespace `eventarc-<trigger-name>-<hash>` and deploys a managed **`gke-forwarder`** pod inside it.
 2. The forwarder pod privately subscribes to Eventarc's Google-managed Pub/Sub topic, pulls events, and posts them **internally** inside the VPC network directly to your GKE service: `http://backstage.backstage.svc.cluster.local/api/events/gcs`.
 
-> [!IMPORTANT] > **The Port 80 Constraint**: The GKE destination block for GCP Eventarc strictly routes events to port `80` and does not accept custom target port configurations. To support this, you **must** expose port `80` (Service port) in your Backstage Kubernetes Service configuration and map it to your container's port `7007` (Pod port) (see the Kubernetes configuration below).
+> [!IMPORTANT]
+>
+> **The Port 80 Constraint**: The GKE destination block for GCP Eventarc strictly routes events to port `80` and does not accept custom target port configurations. To support this, you **must** expose port `80` (Service port) in your Backstage Kubernetes Service configuration and map it to your container's port `7007` (Pod port) (see the Kubernetes configuration below).
 
-> [!WARNING] > **Google OIDC Configuration in GKE**:
+> [!WARNING]
+>
+> **Google OIDC Configuration in GKE**:
 > Google OIDC ID Token verification is fully implemented in the module and can be enabled or disabled in configuration (`events.modules.gcsEventarcWebhook.oidc.enabled`). However, it **must** be disabled (`false`) when using GKE private routing.
 >
 > **The Reason**: Google Eventarc only generates and attaches Google OIDC ID tokens when delivering to public HTTPS endpoints, Cloud Run, or Cloud Functions. For GKE service destinations, Eventarc uses an internal cluster-local **gke-forwarder** pod that pulls from Pub/Sub and makes a direct HTTP POST request to your service. Because this forwarder pod runs locally within your VPC and cannot generate or attach Google OIDC ID tokens, the webhook will reject Eventarc requests if OIDC verification is enabled. Security for GKE internal endpoints should instead be handled at the network level (e.g., using Kubernetes `NetworkPolicies`).
 
-> [!NOTE] > **Why the OIDC Verification Code is Retained**:
+> [!NOTE]
+>
+> **Why the OIDC Verification Code is Retained**:
 > Despite being disabled for GKE internal VPC routing, the OIDC token verification logic is fully supported and retained in the codebase to support:
 >
 > - **Public Cloud Run / Serverless Deployments**: If Backstage is deployed on Google Cloud Run (where the endpoint is exposed as a public HTTPS URL), enabling OIDC is **highly recommended** (and often mandatory) to cryptographically verify that all incoming webhooks originate genuinely from your Google Cloud Eventarc trigger, preventing public index spoofing.
@@ -295,7 +301,9 @@ spec:
 
 Configure the GCS Eventarc webhook and its dependent Vertex AI Search engine in your `app-config.yaml` as follows:
 
-> [!IMPORTANT] > **Conflict with Local Indexing**:
+> [!IMPORTANT]
+>
+> **Conflict with Local Indexing**:
 > This webhook module **cannot** be active when direct local indexing is enabled for TechDocs (`search.engines.vertexai.types.techdocs.indexing.enabled: true` or globally `search.engines.vertexai.indexing.enabled: true`).
 > If both are enabled, the backend will fail to start and throw a `BackendStartupError` during initialization. You must either disable local techdocs indexing in configuration or remove the webhook module (`eventsModuleGcsEventarcWebhook`) from your backend codebase.
 
@@ -462,7 +470,9 @@ resource "google_eventarc_trigger" "gcs_to_backstage_run" {
 }
 ```
 
-> [!IMPORTANT] > **Required GCP Service Accounts & IAM Roles**:
+> [!IMPORTANT]
+>
+> **Required GCP Service Accounts & IAM Roles**:
 > Configure the following GCP IAM permissions based on your chosen deployment target:
 >
 > 1. **Eventarc Trigger Service Account** (`google_service_account.eventarc_trigger_sa.email`):
