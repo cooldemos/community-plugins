@@ -142,6 +142,7 @@ In `plugins/search-backend-module-vertexai/README.md`:
 - Remove words like "seamlessly", "high-performance", "Zero hardcoding!", "Infinite Custom Type Extensibility", "Infinite", "beautifully blended", "massive CPU/memory overhead", "effortless", etc.
 - Stick to factual descriptions. Instead of "Zero hardcoding! You can dynamically map...", say: "Maps custom Backstage document types (e.g., `techdocs`, `software-catalog`) to individual Google Cloud Data Stores and Search Apps in the configuration."
 - In the Ingestion Bypass section, explain standard TechDocs parsing and indexing in Backstage compared to the decoupled mode without using terms like "Safely Discarded / Black-Hole" or "No CPU Overhead".
+- Restructure the "Required Integration Dependencies" section to clearly separate general configuration settings from TechDocs Ingestion Modes (Direct Local Indexing vs. Decoupled Ingestion Pipeline), clarifying that Eventarc and GCS publisher settings are only needed for Decoupled mode.
 
 ## 4. Verification Plan
 

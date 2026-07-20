@@ -227,6 +227,7 @@ git commit -m "docs: document standalone deployment mode and simplify query orch
 1. Replace emojis from header titles and bullet points.
 2. Rephrase sentences to be passive, technical, and objective (e.g., replace "Zero hardcoding!" with configuration details).
 3. Update the ingestion bypass diagram and description to focus on decoupled flow without hype terms.
+4. Restructure the "Required Integration Dependencies" section to clearly separate general configuration settings from TechDocs Ingestion Modes (Direct Local Indexing vs. Decoupled Ingestion Pipeline).
 
 - [ ] **Step 2: Run prettier to format the updated markdown file**
       Run: `npx prettier --write plugins/search-backend-module-vertexai/README.md` in `workspaces/hybrid-search/`.
