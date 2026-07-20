@@ -26,7 +26,7 @@ In this mode, standard Backstage collators build and parse HTML files locally on
 
 ### Option B: Decoupled Ingestion Pipeline (Recommended for Production)
 
-In this mode, local document building and parsing are bypassed on the Node.js server. Instead, documentation is built in CI/CD, published to GCS, and ingested into Vertex AI Search via Eventarc.
+In this mode, local document building and parsing are bypassed on the Node.js server. Instead, documentation is built in CI/CD, published to GCS, and ingested into Vertex AI Search via Eventarc (a Google Cloud event routing service that detects GCS file uploads and notifies Backstage via webhook requests).
 
 ```mermaid
 graph LR
