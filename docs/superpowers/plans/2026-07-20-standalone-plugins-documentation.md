@@ -431,6 +431,33 @@ Run:
 git add docs/architecture.md
 git commit -m "docs: correct techdocs ingestion performance descriptions in docs/architecture.md"
 ```
+```
+
+## Task 12: Add Eventarc Trigger Scoping Details in docs/architecture.md
+
+### Description
+In `docs/architecture.md` under Section 4 Option B (Decoupled Ingestion), clarify that the build pipeline uploads all compiled site assets (HTML, CSS, JS, etc.) to GCS in addition to the `search_index.json` file. However, the Eventarc trigger is specifically scoped/configured to monitor changes *only* to the `search_index.json` file path. Explain that this prevents the trigger from firing multiple redundant webhooks for a single TechDocs build event.
+
+**Acceptable files:**
+- `workspaces/hybrid-search/docs/architecture.md`
+
+**Step 1: Modify workspaces/hybrid-search/docs/architecture.md**
+Update Option B's flow description paragraph to explain the GCS upload assets and Eventarc file path scoping.
+
+**Step 2: Run prettier to format the updated markdown file**
+Run: `npx prettier --write docs/architecture.md` in `workspaces/hybrid-search/`.
+
+**Step 3: Run prettier check to verify formatting is clean**
+Run: `npx prettier --check docs/architecture.md` in `workspaces/hybrid-search/`.
+Expected: file passes the check.
+
+**Step 4: Commit the changes**
+Run:
+```bash
+git add docs/architecture.md
+git commit -m "docs: add eventarc trigger path scoping details in docs/architecture.md"
+```
+
 
 
 
