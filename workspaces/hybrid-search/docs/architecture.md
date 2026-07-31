@@ -1033,3 +1033,888 @@ sequenceDiagram
         Note over Worker: Zero Deleted Pages Detected; Reconciliation Complete
     end
 ```
+
+---
+
+# Part 4: Complete Operator & Implementation Manual (Low-Level Configuration & Code)
+
+---
+
+## Section 1: Backend Module Integration Code & Deployment Scenarios
+
+This section provides complete TypeScript registration patterns for integrating the Hybrid Search Workspace packages into Backstage using the New Backend System (`@backstage/backend-plugin-api`).
+
+### 1. Scenario A: Standalone Typesense Engine Registration
+
+In a Standalone Typesense deployment, the Typesense search engine is registered directly as the primary search engine for the portal backend. It intercepts all incoming search queries and handles pull-indexing streams for catalog metadata and documentation.
+
+```typescript
+// packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+
+const backend = createBackend();
+
+// Core portal plugins
+backend.add(import('@backstage/plugin-catalog-backend'));
+backend.add(import('@backstage/plugin-search-backend'));
+backend.add(import('@backstage/plugin-techdocs-backend'));
+
+// Register Typesense directly as the primary search engine (default export)
+// This module binds Typesense to searchEngineRegistryExtensionPoint
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-typesense'),
+);
+
+backend.start();
+```
+
+---
+
+### 2. Scenario B: Standalone Vertex AI Engine Registration
+
+In a Standalone Vertex AI deployment, Google Cloud Vertex AI Search serves as the primary search engine for all document categories across the portal, leveraging a global blended Search App for portal-wide homepage queries.
+
+```typescript
+// packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+
+const backend = createBackend();
+
+// Core portal plugins
+backend.add(import('@backstage/plugin-catalog-backend'));
+backend.add(import('@backstage/plugin-search-backend'));
+backend.add(import('@backstage/plugin-techdocs-backend'));
+
+// Register Vertex AI Search directly as the primary search engine (default export)
+// This module binds Vertex AI Search to searchEngineRegistryExtensionPoint
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-vertexai'),
+);
+
+backend.start();
+```
+
+---
+
+### 3. Scenario C: Federated Hybrid Search Topology Registration
+
+In a Federated Hybrid Search deployment, the `HybridSearchEngine` router is registered as the primary search engine. Sub-engines (Typesense for structured catalog entities, Vertex AI Search for semantic TechDocs) are registered via the hybrid search extension point. Decoupled GCS Eventarc webhook ingress is enabled for event-driven TechDocs updates.
+
+```typescript
+// packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+
+const backend = createBackend();
+
+// 1. Core Backstage Backend Services
+backend.add(import('@backstage/plugin-catalog-backend'));
+backend.add(import('@backstage/plugin-search-backend'));
+backend.add(import('@backstage/plugin-techdocs-backend'));
+backend.add(import('@backstage/plugin-events-backend'));
+
+// 2. Hybrid Search Router Orchestrator
+// Binds HybridSearchEngine as the primary search engine in searchEngineRegistryExtensionPoint
+backend.add(import('@backstage-community/plugin-search-backend-module-hybrid'));
+
+// 3. Typesense Sub-Engine Registration
+// Binds TypesenseSearchEngine to hybridSearchEngineRegistryExtensionPoint
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-typesense/hybrid'),
+);
+
+// 4. Vertex AI Search Sub-Engine Registration
+// Binds VertexAISearchEngine to hybridSearchEngineRegistryExtensionPoint
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-vertexai/hybrid'),
+);
+
+// 5. Decoupled GCS Eventarc Webhook Ingress Module
+// Binds /api/events/gcs endpoint to the events router for event-driven TechDocs ingestion
+backend.add(
+  import('@backstage-community/plugin-events-backend-module-gcs-eventarc'),
+);
+
+backend.start();
+```
+
+---
+
+### 4. Custom Sub-Engine Registration Pattern
+
+To integrate custom search backends (such as Elasticsearch, OpenSearch, or PostgreSQL) into the Hybrid Search Router, create a custom backend module that consumes `hybridSearchEngineRegistryExtensionPoint`:
+
+```typescript
+// packages/backend/src/modules/searchModuleCustomHybrid.ts
+import {
+  coreServices,
+  createBackendModule,
+} from '@backstage/backend-plugin-api';
+import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
+import { CustomSearchEngine } from './CustomSearchEngine';
+
+export const searchModuleCustomHybrid = createBackendModule({
+  pluginId: 'search',
+  moduleId: 'custom-hybrid-engine',
+  register(env) {
+    env.registerInit({
+      deps: {
+        hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
+        config: coreServices.rootConfig,
+        logger: coreServices.logger,
+      },
+      async init({ hybridRegistry, config, logger }) {
+        logger.info(
+          'Initializing Custom Search Engine for Hybrid Search Router.',
+        );
+
+        const customEngine = new CustomSearchEngine({ logger, config });
+
+        // Register custom engine with the hybrid registry
+        hybridRegistry.registerEngine('custom-engine-name', customEngine, {
+          supportsTypes: ['software-catalog', 'custom-type'],
+        });
+      },
+    });
+  },
+});
+```
+
+---
+
+## Section 2: Annotated Configuration Reference (`app-config.yaml`)
+
+This section provides exhaustive, annotated YAML configuration references across all deployment scenarios.
+
+### 1. Standalone Typesense Configuration
+
+```yaml
+search:
+  engine: typesense
+  engines:
+    typesense:
+      # API Key for Typesense cluster authentication
+      apiKey: ${TYPESENSE_API_KEY}
+
+      # Cluster nodes definition
+      nodes:
+        - host: ${TYPESENSE_HOST} # e.g. typesense.search.svc.cluster.local or localhost
+          port: 8108
+          protocol: http
+
+      # Raw options passed directly to the Typesense JS client SDK
+      clientOptions:
+        connectionTimeoutSeconds: 5
+        numRetries: 3
+        logLevel: info
+
+      # Dynamic schema provisioning & collection query configuration
+      collections:
+        software-catalog:
+          fields:
+            - name: '.*'
+              type: 'auto' # Wildcard regex auto-schema creation on 404
+            - name: embedding
+              type: 'float[]'
+              num_dim: 384
+              embed:
+                from:
+                  - text
+                model_config:
+                  model_name: 'ts/all-MiniLM-L6-v2' # Optional built-in vector search model
+          searchOptions:
+            query_by: 'title,text,location,embedding'
+        techdocs:
+          fields:
+            - name: '.*'
+              type: 'auto'
+          searchOptions:
+            query_by: 'title,text,path'
+```
+
+---
+
+### 2. Standalone Vertex AI Configuration
+
+```yaml
+search:
+  engine: vertexai
+  engines:
+    vertexai:
+      # MANDATORY for Standalone mode: Global blended Search App for portal-wide queries
+      blendedSearch:
+        projectId: company-portal-prod
+        location: europe-west4
+        engineId: backstage-global-search-app
+        searchOptions:
+          contentSearchSpec:
+            extractiveContentSpec:
+              maxExtractiveAnswerCount: 1
+              maxExtractiveSegmentCount: 2
+
+      # Enable direct local pull-indexing streams for catalog and techdocs
+      indexing:
+        enabled: true
+
+      # Datastore & serving Engine mapping per document category
+      types:
+        techdocs:
+          datastore:
+            projectId: company-core-prod
+            datastoreId: backstage-techdocs
+            location: europe-west4
+          engine:
+            projectId: company-portal-prod
+            engineId: backstage-techdocs-app
+            location: europe-west4
+        software-catalog:
+          datastore:
+            projectId: company-catalog-prod
+            datastoreId: backstage-catalog
+            location: europe-west4
+
+      # Catalog cleanup task (automatically disabled if indexing.enabled is true)
+      cleanup:
+        enabled: true
+        frequency: { hours: 2 }
+        initialDelay: { minutes: 2 }
+
+techdocs:
+  publisher:
+    googleGcs:
+      bucketName: company-backstage-techdocs-prod
+```
+
+---
+
+### 3. Federated Hybrid Search Configuration
+
+```yaml
+search:
+  engine: hybrid
+  engines:
+    hybrid:
+      # Merging strategy: 'interleave' (round-robin) or 'score-normalized-sort' (ratio & rank scaling)
+      mergeStrategy: score-normalized-sort
+
+      # Category routing mapping document types to sub-engine identifiers
+      routing:
+        software-catalog: typesense
+        techdocs: vertexai
+        default: typesense # Fallback engine for unmapped categories
+
+    # Typesense sub-engine configuration
+    typesense:
+      apiKey: ${TYPESENSE_API_KEY}
+      nodes:
+        - host: typesense-service.search.svc.cluster.local
+          port: 8108
+          protocol: http
+      collections:
+        software-catalog:
+          fields:
+            - name: '.*'
+              type: 'auto'
+          searchOptions:
+            query_by: 'title,text,location'
+
+    # Vertex AI sub-engine configuration
+    # FORBIDDEN: Do NOT include 'blendedSearch' here! In hybrid mode, query blending is managed by the Hybrid Search Router.
+    vertexai:
+      types:
+        techdocs:
+          datastore:
+            projectId: company-core-prod
+            datastoreId: backstage-techdocs
+            location: europe-west4
+          engine:
+            projectId: company-portal-prod
+            engineId: backstage-techdocs-app
+            location: europe-west4
+          # Disable local TechDocs indexing (handled via GCS Eventarc webhook)
+          indexing:
+            enabled: false
+
+      cleanup:
+        enabled: true
+        frequency: { hours: 2 }
+        initialDelay: { minutes: 2 }
+
+# Decoupled GCS Eventarc Webhook Ingress Parameters
+events:
+  modules:
+    gcsEventarcWebhook:
+      oidc:
+        enabled: false # MUST be false for private GKE internal VPC routing; true for public Cloud Run
+        audience: https://portal.company.com/api/events/gcs
+        serviceAccountEmail: eventarc-trigger-sa@company-portal-prod.iam.gserviceaccount.com
+      maxConcurrency: 5 # Max parallel deletion / import worker tasks
+      payloadSizeLimit: '100kb'
+      batchSize: 100 # Documents per inline import batch to Vertex AI Search
+
+techdocs:
+  publisher:
+    googleGcs:
+      bucketName: company-backstage-techdocs-prod
+```
+
+> [!WARNING] > **Forbidden `blendedSearch` Guardrail in Hybrid Mode**:
+> In a Federated Hybrid Search deployment (`search.engine: hybrid`), configuring a `blendedSearch` block under `search.engines.vertexai` is strictly forbidden. The `VertexAISearchEngine` detects this conflict during backend initialization and throws a fatal `ConfigurationError`, preventing server startup. Global query blending in hybrid mode must be managed exclusively by the `HybridSearchEngine` orchestrator.
+
+---
+
+## Section 3: Kubernetes Service & Network Port Mapping
+
+When GKE Eventarc triggers are configured with a GKE Service destination, Google's Eventarc agent deploys an internal `gke-forwarder` pod that routes events to Service Port `80`. The Backstage backend container runs on Port `7007`.
+
+To support both internal Eventarc traffic and standard developer HTTP traffic, the Kubernetes `Service` manifest exposes dual ports:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: backstage
+  labels:
+    app.kubernetes.io/name: backstage
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  selector:
+    app: backstage
+  ports:
+    - name: http
+      port: 7007
+      targetPort: 7007
+      protocol: TCP
+    - name: eventarc # Mandated port 80 target for GKE Eventarc Forwarder pods
+      port: 80
+      targetPort: 7007
+      protocol: TCP
+```
+
+> [!IMPORTANT] > **The Port 80 Constraint**:
+> GKE Eventarc trigger routing hardcodes event delivery to Port `80` on target GKE services. Mapping Service Port `80` to Container Port `7007` allows the internal Eventarc forwarder to deliver `/api/events/gcs` POST requests directly to the Backstage container without modifying application port bindings.
+
+---
+
+## Section 4: GCP IAM Roles Matrix
+
+The following matrix defines the exact GCP IAM roles required across the four service account personas operating in the Hybrid Search Workspace:
+
+| Service Account Persona                                                                              | Target GCP Resource            | Required GCP IAM Role                        | Operational Justification & Technical Necessity                                                                                                                                                                |
+| :--------------------------------------------------------------------------------------------------- | :----------------------------- | :------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Backstage Backend SA**<br/>`backstage-backend-sa@<project>.iam.gserviceaccount.com`             | GCP Project / Discovery Engine | `roles/discoveryengine.admin`                | Full administrative control required to execute document imports, schema updates, and document purge/delete calls via the Discovery Engine API. _(Note: Lower viewer/editor roles lack deletion permissions)._ |
+|                                                                                                      | TechDocs GCS Bucket            | `roles/storage.objectAdmin`                  | Required to read `search_index.json` files, inspect generation metadata, and scan/delete orphaned documentation folders during catalog cleanup sweeps.                                                         |
+| **2. Eventarc Trigger SA**<br/>`eventarc-trigger-sa@<project>.iam.gserviceaccount.com`               | Eventarc Trigger Resource      | `roles/eventarc.eventReceiver`               | Permits the trigger service account to receive GCS `object.v1.finalized` storage events from Cloud Pub/Sub.                                                                                                    |
+|                                                                                                      | Destination Cloud Run Service  | `roles/run.invoker`                          | _(Cloud Run deployments only)_ Grants permission to invoke the private Backstage Cloud Run HTTPS endpoint with OIDC tokens.                                                                                    |
+| **3. GCS Service Agent**<br/>`service-<project-number>@gs-project-accounts.iam.gserviceaccount.com`  | GCP Project / Pub/Sub Topics   | `roles/pubsub.publisher`                     | Enables the automated GCS system agent to publish object finalize notifications to Eventarc's Google-managed Pub/Sub topics.                                                                                   |
+| **4. Eventarc Service Agent**<br/>`service-<project-number>@gcp-sa-eventarc.iam.gserviceaccount.com` | GCP Project                    | `roles/compute.viewer`                       | Allows the Eventarc system agent to query cluster VPC network details for GKE trigger destination setup.                                                                                                       |
+|                                                                                                      | GKE Cluster                    | `roles/container.developer`                  | Grants permission to automatically provision and manage `gke-forwarder` pods inside dedicated `eventarc-*` namespaces.                                                                                         |
+|                                                                                                      | Eventarc Trigger SA            | `roles/iam.serviceAccountAdmin`              | Permits the Eventarc system agent to bind the Trigger Service Account identity to managed `gke-forwarder` pods.                                                                                                |
+|                                                                                                      | Cloud KMS Key                  | `roles/cloudkms.cryptoKeyEncrypterDecrypter` | _(CMEK deployments only)_ Allows Eventarc to encrypt/decrypt Pub/Sub topic channels using Customer-Managed Keys.                                                                                               |
+
+---
+
+## Section 5: GCP Infrastructure Provisioning (Terraform)
+
+This section provides complete, production-grade Terraform HCL manifests to provision all GCP infrastructure components required by the Hybrid Search Workspace.
+
+```hcl
+# main.tf - Hybrid Search GCP Infrastructure Provisioning
+
+terraform {
+  required_version = ">= 1.5.0"
+  required_providers {
+    google = {
+      source  = "hashicorp/google"
+      version = "~> 5.0"
+    }
+    google-beta = {
+      source  = "hashicorp/google-beta"
+      version = "~> 5.0"
+    }
+  }
+}
+
+variable "project_id" {
+  type        = string
+  description = "GCP Project ID"
+}
+
+variable "region" {
+  type        = string
+  default     = "europe-west4"
+  description = "GCP Region for Discovery Engine and Storage"
+}
+
+variable "techdocs_bucket_name" {
+  type        = string
+  description = "Name of the TechDocs GCS storage bucket"
+}
+
+variable "gke_cluster_name" {
+  type        = string
+  default     = "backstage-production"
+  description = "Name of the GKE Cluster hosting Backstage"
+}
+
+variable "gke_cluster_location" {
+  type        = string
+  default     = "europe-west4-a"
+  description = "GKE Cluster location"
+}
+
+variable "kms_key_id" {
+  type        = string
+  default     = ""
+  description = "Optional Customer-Managed KMS Key ID for CMEK encryption"
+}
+
+data "google_project" "project" {
+  project_id = var.project_id
+}
+
+# ============================================================================
+# 1. DISCOVERY ENGINE DATA STORES & SCHEMAS
+# ============================================================================
+
+locals {
+  datastores = {
+    techdocs = {
+      display_name         = "Backstage TechDocs Store"
+      create_dedicated_app = true
+    }
+    catalog = {
+      display_name         = "Backstage Catalog Store"
+      create_dedicated_app = false
+    }
+  }
+}
+
+resource "google_discovery_engine_data_store" "backstage" {
+  for_each          = local.datastores
+  project           = var.project_id
+  location          = var.region
+  data_store_id     = "backstage-${each.key}"
+  display_name      = each.value.display_name
+  industry_vertical = "GENERIC"
+  content_config    = "NO_CONTENT"
+  solution_types    = ["SOLUTION_TYPE_SEARCH"]
+}
+
+resource "google_discovery_engine_schema" "backstage_schema" {
+  for_each      = local.datastores
+  project       = var.project_id
+  location      = google_discovery_engine_data_store.backstage[each.key].location
+  data_store_id = google_discovery_engine_data_store.backstage[each.key].data_store_id
+  schema_id     = "default_schema"
+
+  json_schema = jsonencode({
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "dynamic": "true",
+    "properties": {
+      "title":         { "type": "string", "keyPropertyMapping": "title", "retrievable": true },
+      "text":          { "type": "string", "keyPropertyMapping": "description", "retrievable": true },
+      "kind":          { "type": "string", "indexable": true, "retrievable": true },
+      "namespace":     { "type": "string", "indexable": true, "retrievable": true },
+      "location":      { "type": "string", "indexable": true, "retrievable": true },
+      "owner":         { "type": "string", "indexable": true, "retrievable": true },
+      "lifecycle":     { "type": "string", "indexable": true, "retrievable": true },
+      "componentType": { "type": "string", "indexable": true, "retrievable": true }
+    }
+  })
+}
+
+# ============================================================================
+# 2. DEDICATED & BLENDED SEARCH APPS
+# ============================================================================
+
+resource "google_discovery_engine_app" "dedicated" {
+  for_each          = { for k, v in local.datastores : k => v if lookup(v, "create_dedicated_app", false) }
+  project           = var.project_id
+  location          = var.region
+  collection_id     = "default_collection"
+  app_id            = "backstage-${each.key}-app"
+  display_name      = "Backstage ${each.value.display_name} App"
+  industry_vertical = "GENERIC"
+  solution_type     = "SOLUTION_TYPE_SEARCH"
+  data_store_ids    = [google_discovery_engine_data_store.backstage[each.key].data_store_id]
+}
+
+resource "google_discovery_engine_app" "global_blended" {
+  project           = var.project_id
+  location          = var.region
+  collection_id     = "default_collection"
+  app_id            = "backstage-global-search-app"
+  display_name      = "Backstage Global Search App"
+  industry_vertical = "GENERIC"
+  solution_type     = "SOLUTION_TYPE_SEARCH"
+  data_store_ids    = [for ds in google_discovery_engine_data_store.backstage : ds.data_store_id]
+}
+
+# ============================================================================
+# 3. SERVICE ACCOUNTS & IAM BINDINGS
+# ============================================================================
+
+resource "google_service_account" "eventarc_trigger_sa" {
+  project      = var.project_id
+  account_id   = "backstage-eventarc-trigger-sa"
+  display_name = "Backstage Eventarc Trigger Service Account"
+}
+
+resource "google_project_iam_member" "gcs_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gs-project-accounts.iam.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "eventarc_agent_compute_viewer" {
+  project = var.project_id
+  role    = "roles/compute.viewer"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "eventarc_agent_container_dev" {
+  project = var.project_id
+  role    = "roles/container.developer"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com"
+}
+
+resource "google_service_account_iam_member" "eventarc_agent_sa_admin" {
+  service_account_id = google_service_account.eventarc_trigger_sa.name
+  role               = "roles/iam.serviceAccountAdmin"
+  member             = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com"
+}
+
+# ============================================================================
+# 4. EVENTARC TRIGGERS (GKE Internal VPC vs Cloud Run)
+# ============================================================================
+
+# Option A: GKE Destination (Internal VPC Routing)
+resource "google_eventarc_trigger" "gcs_to_backstage_gke" {
+  name     = "gcs-to-backstage-gke"
+  location = var.region
+  project  = var.project_id
+
+  matching_criteria {
+    attribute = "type"
+    value     = "google.cloud.storage.object.v1.finalized"
+  }
+
+  matching_criteria {
+    attribute = "bucket"
+    value     = var.techdocs_bucket_name
+  }
+
+  destination {
+    gke {
+      cluster   = var.gke_cluster_name
+      location  = var.gke_cluster_location
+      namespace = "backstage"
+      service   = "backstage"
+      path      = "/api/events/gcs"
+    }
+  }
+
+  service_account = google_service_account.eventarc_trigger_sa.email
+}
+
+# ============================================================================
+# 5. CUSTOMER-MANAGED ENCRYPTION KEYS (CMEK KMS Support)
+# ============================================================================
+
+resource "google_eventarc_google_channel_config" "cmek" {
+  count           = var.kms_key_id != "" ? 1 : 0
+  provider        = google-beta
+  location        = var.region
+  project         = var.project_id
+  name            = "googleChannelConfig"
+  crypto_key_name = var.kms_key_id
+}
+
+resource "google_kms_crypto_key_iam_member" "eventarc_kms" {
+  count         = var.kms_key_id != "" ? 1 : 0
+  crypto_key_id = var.kms_key_id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  member        = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com"
+}
+
+# ============================================================================
+# 6. PUB/SUB DEAD-LETTER TOPIC (DLQ)
+# ============================================================================
+
+resource "google_pubsub_topic" "eventarc_dlq" {
+  name    = "gcs-eventarc-dlq"
+  project = var.project_id
+}
+
+resource "google_pubsub_topic_iam_member" "pubsub_dlq_publisher" {
+  project = var.project_id
+  topic   = google_pubsub_topic.eventarc_dlq.name
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+}
+```
+
+#### Attaching DLQ Policy to Eventarc Subscription via CLI:
+
+```bash
+# 1. Retrieve the Pub/Sub subscription managed by Eventarc
+SUBSCRIPTION_NAME=$(gcloud eventarc triggers describe gcs-to-backstage-gke \
+  --location=europe-west4 \
+  --format="value(transport.pubsub.subscription)")
+
+# 2. Attach Dead-Letter Policy with 5 max delivery attempts
+gcloud pubsub subscriptions update ${SUBSCRIPTION_NAME} \
+  --dead-letter-topic=gcs-eventarc-dlq \
+  --max-delivery-attempts=5
+```
+
+---
+
+## Section 6: Network Security & Hardening Runbooks
+
+Because Google OIDC verification must be disabled for GKE internal VPC Eventarc routing (`events.modules.gcsEventarcWebhook.oidc.enabled: false`), access to `/api/events/gcs` must be hardened at the network layer. This runbook provides a 4-layer defense-in-depth security model.
+
+### 1. Layer 1: NGINX Ingress Path Blocking (`403 Forbidden`)
+
+If using NGINX Ingress Controller, block external access to `/api/events/gcs` using a configuration snippet annotation:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backstage-ingress
+  namespace: backstage
+  annotations:
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      location /api/events/gcs {
+        deny all;
+        return 403;
+      }
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: portal.company.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backstage
+                port:
+                  number: 7007
+```
+
+---
+
+### 2. Layer 2: GKE Gateway API + Cloud Armor (`GCPBackendPolicy` Edge 403)
+
+For GKE Gateway API deployments, drop malicious external requests at the Cloud Load Balancer edge before they reach the cluster.
+
+```bash
+# 1. Create Cloud Armor Policy
+gcloud compute security-policies create backstage-armor-policy \
+  --description="Block public webhook access to Eventarc endpoint"
+
+# 2. Add rule denying access to /api/events/gcs
+gcloud compute security-policies rules create 1000 \
+  --security-policy=backstage-armor-policy \
+  --expression="request.path.matches('/api/events/gcs')" \
+  --action="deny-403"
+```
+
+Bind the policy to the Backstage Service using a `GCPBackendPolicy`:
+
+```yaml
+apiVersion: networking.gke.io/v1
+kind: GCPBackendPolicy
+metadata:
+  name: backstage-security-policy
+  namespace: backstage
+spec:
+  default:
+    securityPolicy: backstage-armor-policy
+  targetRef:
+    group: ''
+    kind: Service
+    name: backstage
+```
+
+---
+
+### 3. Layer 3: GKE Gateway API `URLRewrite` to 404
+
+Use GKE Gateway `HTTPRoute` rules to rewrite incoming external `/api/events/gcs` paths to a non-existent URL, forcing Backstage to respond with `404 Not Found`:
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backstage-route
+  namespace: backstage
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: external-http-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/events/gcs
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /invalid-blocked-route
+      backendRefs:
+        - name: backstage
+          port: 7007
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backstage
+          port: 7007
+```
+
+---
+
+### 4. Layer 4: Kubernetes `NetworkPolicy` (Port 80 VPC Isolation)
+
+Restrict Port `80` (the GKE Eventarc forwarder ingress port) so that only pods inside dynamic `eventarc-*` namespaces can initiate TCP connections to it:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: restrict-webhook-to-eventarc-only
+  namespace: backstage
+spec:
+  podSelector:
+    matchLabels:
+      app: backstage
+  policyTypes:
+    - Ingress
+  ingress:
+    # Allow Eventarc forwarder pods in eventarc-* namespaces to access Port 80
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: ['eventarc-*']
+      ports:
+        - protocol: TCP
+          port: 80
+
+    # Allow standard ingress controller traffic on Port 7007
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 7007
+```
+
+---
+
+## Section 7: Operations & Local Testing Guide
+
+This section provides operational CLI guides for bulk-bootstrapping historical documentation and testing Eventarc webhooks locally.
+
+### 1. Bulk-Bootstrapping Historical TechDocs (`bootstrap.ts`)
+
+When migrating an existing Backstage portal to Vertex AI Search, historical TechDocs compiled in GCS must be imported into the Vertex AI Search Datastore. The `bootstrap.ts` CLI script handles extraction, enrichment, NDJSON formatting, and batch importing.
+
+#### Prerequisites:
+
+1. Authenticate ADC: `gcloud auth application-default login`
+2. Provision a temporary GCS staging bucket: `gsutil mb gs://company-techdocs-staging-tmp`
+
+#### Step 1: Execute `prepare-docs`
+
+Scans the source TechDocs bucket, parses `search_index.json` manifests, queries the Backstage catalog API for component metadata, formats documents into Vertex AI structured JSON, and uploads `.ndjson` files to staging:
+
+```bash
+npx ts-node plugins/search-backend-module-vertexai/scripts/bootstrap.ts prepare-docs \
+  --techdocsBucket company-backstage-techdocs-prod \
+  --stagingBucket company-techdocs-staging-tmp \
+  --backstageUrl http://localhost:7007
+```
+
+#### Step 2: Execute `import-docs`
+
+Triggers batch import operations from the staging bucket into the Discovery Engine Datastore in chunks of 100 files:
+
+```bash
+npx ts-node plugins/search-backend-module-vertexai/scripts/bootstrap.ts import-docs \
+  --projectId company-core-prod \
+  --location europe-west4 \
+  --datastoreId backstage-techdocs \
+  --stagingBucket company-techdocs-staging-tmp
+```
+
+---
+
+### 2. Local `curl` Eventarc Webhook Testing Workflow
+
+Operators can test the GCS Eventarc webhook end-to-end on a local developer machine without cloud triggers or GKE clusters.
+
+#### Step 1: Local Authentication & Configuration
+
+1. Authenticate Application Default Credentials:
+
+   ```bash
+   gcloud auth application-default login
+   ```
+
+2. Disable OIDC verification in `app-config.local.yaml`:
+   ```yaml
+   events:
+     modules:
+       gcsEventarcWebhook:
+         oidc:
+           enabled: false
+   ```
+
+#### Step 2: Start Local Backstage Backend
+
+```bash
+yarn start
+```
+
+#### Step 3: Trigger Simulated Eventarc Notification via `curl`
+
+Send a CloudEvents-formatted HTTP `POST` request simulating a GCS file upload:
+
+```bash
+curl -X POST http://localhost:7007/api/events/gcs \
+  -H "Content-Type: application/json" \
+  -H "ce-type: google.cloud.storage.object.v1.finalized" \
+  -d '{
+    "bucket": "company-backstage-techdocs-prod",
+    "name": "default/component/auth-service/search_index.json",
+    "generation": 100042
+  }'
+```
+
+#### Step 4: Verify Console Logs
+
+Verify that the local backend intercepts the event, downloads `search_index.json`, enriches documents via Catalog Service, ingests active pages, and executes delta reconciliation:
+
+```text
+[1] info: Starting search-index synchronization for: default/component/auth-service/search_index.json
+[1] info: Ingesting 14 pages into dataStore: backstage-techdocs by spawning 1 import operations (concurrency limit: 5)...
+[1] info: Waiting for all 1 import operations to complete in parallel...
+[1] info: Bulk document ingestion completed.
+[1] info: Successfully synchronized search index for Component:default/auth-service
+[1] info: Reconciling generation 100042 against previous generation 100041...
+[1] info: Delta reconciliation complete: 0 stale documents purged.
+```
