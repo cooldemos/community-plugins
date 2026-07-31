@@ -81,15 +81,17 @@ To ensure technical depth, architectural consistency, and factual accuracy, this
   - Individual engine timeout handling: latency or failure in one engine does not block responses from remaining engines.
 - **Result Aggregation & Score Merging Mechanics**:
   - _Round-Robin Interleaving (`interleave`)_: Alternating document selection across sub-engine result lists to balance category visibility on page 1.
-  - _Relative Max-Score Normalization (`score-normalized-sort`)_: Standardizing relevance scores across distinct search backends using the ratio:
-    $$score_{normalized} = \frac{raw\_score}{max\_score}$$
+  - _Relative Max-Score Normalization (`score-normalized-sort`)_: Standardizing relevance scores across distinct search backends. Handled via a dual-mode calculation (ratio scaling for scored engines vs. rank-based fallback scaling for unscored engines such as blended Search Apps):
+    $$score_{normalized} = \begin{cases} \frac{raw\_score}{max\_score} & \text{if } raw\_score \text{ exists} \\ 1.0 - \frac{index}{total\_items} & \text{if } raw\_score \text{ is undefined/null} \end{cases}$$
   - _Pagination Boundary Mechanics_: Direct cursor forwarding for single-engine queries vs. result array slicing and cursor omission for federated multi-engine queries.
 - **Decoupled Asynchronous TechDocs Ingestion**:
   - Shifting TechDocs build and HTML parsing from the Node.js runtime to external CI/CD pipelines publishing to Google Cloud Storage (GCS).
   - Asynchronous event notifications using Google Cloud Eventarc.
 - **Catalog Metadata Enrichment & Delta Reconciliation**:
-  - Ingress webhook enriches raw TechDocs index manifests with live Catalog Service metadata (`owner`, `lifecycle`, `componentType`, `annotations`).
-  - Stable MD5 document identifier hashing (`md5(namespace:kind:name:path)`).
+  - Ingress webhook enriches raw TechDocs index manifests with live Catalog Service metadata (`owner`, `lifecycle`, `componentType`, `annotations`) and authorization fields (`authorization.resourceRef`).
+  - Deterministic MD5 document identifier hashing computed from canonical lowercased URI paths:
+    $$canonicalPath = \text{`/docs/\${namespace.toLowerCase()}/\${kind.toLowerCase()}/\${name.toLowerCase()}/\${cleanLocation}`}$$
+    $$docId = \text{md5}(canonicalPath)$$
   - Differential reconciliation comparing GCS file generation `N` against historical generation `N-1`, identifying removed pages, and issuing throttled API deletion requests to the search engine.
 
 ---
@@ -102,9 +104,13 @@ To ensure technical depth, architectural consistency, and factual accuracy, this
   2. `@backstage-community/plugin-search-backend-module-typesense`:
      - Multi-collection concurrent execution, memory-buffered writable streams (batching at 100 documents), auto-provisioning wildcard schemas (`.*`), and raw client/query passthrough capabilities.
   3. `@backstage-community/plugin-search-backend-module-vertexai`:
-     - Google Cloud Discovery Engine API integration, direct local indexing vs. decoupled Eventarc mode, extractive content priority hierarchy (Answers > Segments > Snippets > Fallback Text), and background catalog cleanup sweeper.
+     - Google Cloud Discovery Engine API integration, direct local indexing vs. decoupled Eventarc mode, 4-tier extractive content priority hierarchy (Answers > Segments > Snippets > Fallback Text), and background catalog cleanup sweeper.
   4. `@backstage-community/plugin-events-backend-module-gcs-eventarc`:
      - Webhook endpoint `/api/events/gcs`, dual security models (Google OIDC verification vs. GKE VPC network isolation), and Pub/Sub Dead-Letter Topic (DLQ) fault tolerance.
+- **Runtime Conflict Rules & Architectural Constraints**:
+  - _Mutually Exclusive Ingestion Pipelines_: Direct local TechDocs indexing (`indexing.enabled: true`) and GCS Eventarc webhook module are strictly mutually exclusive; concurrent activation triggers a fatal initialization startup error.
+  - _`blendedSearch` Configuration Scope_: `blendedSearch` configuration is strictly restricted to Standalone mode; configuring it in Hybrid mode violates federated routing and triggers a validation error.
+  - _GKE Private VPC vs. Cloud Run Security Constraints_: OIDC token verification is mandatory for public Cloud Run routes, but must be set to `false` for internal GKE VPC routing because GKE managed forwarder pods do not attach OIDC tokens over cluster-local port 80.
 - **Deployment Topologies**:
   - Standalone Engine Mode vs. Federated Hybrid Router Mode.
 - **Architecture Sequence Diagrams (Mermaid)**:
@@ -120,6 +126,10 @@ To ensure technical depth, architectural consistency, and factual accuracy, this
   - TypeScript code for registering packages in `packages/backend/src/index.ts` under Backstage's New Backend System.
 - **Annotated Configuration Reference (`app-config.yaml`)**:
   - Exhaustive configuration reference covering hybrid routing, Typesense cluster nodes, Vertex AI datastores/apps, and GCS Eventarc parameters.
+- **Kubernetes Service & Network Port Mapping**:
+  - Kubernetes `Service` manifest explicitly mapping port `80` (GKE Eventarc Forwarder target) to container port `7007`.
+- **Complete GCP IAM Roles Matrix**:
+  - Table mapping service account personas (Backstage Backend SA, Eventarc Trigger SA, GCS Service Agent, Eventarc Service Agent) to exact required GCP IAM roles (`roles/discoveryengine.admin`, `roles/storage.objectAdmin`, `roles/eventarc.eventReceiver`, `roles/run.invoker`, `roles/pubsub.publisher`).
 - **GCP Infrastructure Provisioning (Terraform)**:
   - Terraform manifests for Discovery Engine Data Stores and blended Search Apps.
   - Eventarc Trigger resources for GKE internal VPC routing and Cloud Run HTTPS routing.
