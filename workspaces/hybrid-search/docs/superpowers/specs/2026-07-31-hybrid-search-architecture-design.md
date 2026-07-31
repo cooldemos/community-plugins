@@ -25,6 +25,26 @@ The **Hybrid Search Workspace** provides multi-engine search routing and asynchr
 
 ---
 
+## Reference Source Materials
+
+To ensure technical depth, architectural consistency, and factual accuracy, this specification and the resulting `docs/architecture.md` are grounded in the following reference sources:
+
+1. **Workspace Package Documentation (`workspaces/hybrid-search`)**:
+
+   - [Workspace Root README.md](../../README.md): Workspace architecture overview, deployment modes, and quickstart configuration.
+   - [Plugins Overview README.md](../../plugins/README.md): Core architectural pillars, dynamic extension points, and module breakdown.
+   - [Hybrid Router Module README.md](../../plugins/search-backend-module-hybrid/README.md): Federated routing algorithms, interleaving, max-score normalization, and pagination boundary mechanics.
+   - [Typesense Module README.md](../../plugins/search-backend-module-typesense/README.md): Memory buffering (100 docs), auto-provisioning wildcard schemas, and client/query passthrough options.
+   - [Vertex AI Module README.md](../../plugins/search-backend-module-vertexai/README.md): Discovery Engine API integration, extractive content priority hierarchy, blended search apps, and catalog cleanup sweeper.
+   - [GCS Eventarc Webhook Module README.md](../../plugins/events-backend-module-gcs-eventarc/README.md): Webhook ingress `/api/events/gcs`, dual security models (Google OIDC vs. GKE VPC network policies), catalog enrichment, and MD5 delta reconciliation.
+
+2. **Official Upstream Backstage Codebase (`backstage/backstage@v1.53.1`)**:
+   - Cloned official repository location: `/usr/local/google/home/mirene/git/backstage-public`
+   - `@backstage/plugin-search-backend`: Core backend search plugin (`plugins/search-backend/src/plugin.ts`).
+   - `@backstage/plugin-search-backend-node`: Standard node search abstractions including `SearchEngine` interface (`types.ts`), `IndexBuilder` streaming builder (`IndexBuilder.ts`), and `Scheduler` task runner (`Scheduler.ts`).
+
+---
+
 ## Document Structure & Outline
 
 ### Part 1: How Backstage Search Works (Conceptual & Architectural Analysis)
