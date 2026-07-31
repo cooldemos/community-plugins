@@ -13,6 +13,7 @@
 - Target File: `workspaces/hybrid-search/docs/architecture.md`
 - Design Spec: `workspaces/hybrid-search/docs/superpowers/specs/2026-07-31-hybrid-search-architecture-design.md`
 - Factual plain language: Zero sales or marketing buzzwords.
+- Target Audience Accessibility: Build all concepts from first principles so technical readers (engineers, architects, DevOps leads) who lack prior Backstage knowledge can fully comprehend the architecture. Avoid superficial or purely schematic hand-waving.
 - Documentation Skill: Apply `.agents/skills/documentation` principles (audience focus, showing vs telling, lead with key context, link don't duplicate).
 - Tone & Style: Verbose, thorough prose explaining _how_ and _why_ internal components operate.
 - Structural Split: Parts 1-3 are strictly conceptual prose, LaTeX math, and Mermaid diagrams (no implementation code blocks). Part 4 contains all low-level technical code, YAML configs, Terraform manifests, and CLI commands.
