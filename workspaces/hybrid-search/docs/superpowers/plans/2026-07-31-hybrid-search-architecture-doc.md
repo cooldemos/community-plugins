@@ -140,13 +140,20 @@
 - Consumes: Low-level configuration, code, and infrastructure runbooks from package READMEs.
 - Produces: Part 4 section of `docs/architecture.md`.
 
-- [ ] **Step 1: Write Backend Module Integration Code**
+- [ ] **Step 1: Write Backend Module Integration Code & Deployment Scenarios**
 
-  - Provide full TypeScript code for registering packages in `packages/backend/src/index.ts` under Backstage's New Backend System.
+  - Provide full TypeScript code for registering packages in `packages/backend/src/index.ts` under Backstage's New Backend System across 3 deployment scenarios:
+    1. _Scenario A: Standalone Typesense Engine Registration_.
+    2. _Scenario B: Standalone Vertex AI Engine Registration_.
+    3. _Scenario C: Federated Hybrid Search Router & Sub-Engines Registration_.
 
-- [ ] **Step 2: Write Annotated Configuration Reference (`app-config.yaml`)**
+- [ ] **Step 2: Write Annotated Configuration Reference (`app-config.yaml`) across Deployment Scenarios**
 
-  - Write exhaustive, fully commented YAML configuration reference covering hybrid routing, Typesense cluster nodes, Vertex AI datastores/apps, and GCS Eventarc parameters.
+  - Write exhaustive, fully commented YAML configuration reference covering:
+    1. Standalone Typesense cluster configuration (`search.engines.typesense`).
+    2. Standalone Vertex AI datastores and `blendedSearch` apps (`search.engines.vertexai`).
+    3. Federated Hybrid Search routing, engine maps, `interleave` vs `score-normalized-sort` strategies, and forbidden `blendedSearch` validation guardrails (`search.engine: hybrid`).
+    4. Decoupled GCS Eventarc parameters (`events.modules.gcsEventarc`).
 
 - [ ] **Step 3: Write Kubernetes Service & Network Port Mapping**
 

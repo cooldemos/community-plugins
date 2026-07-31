@@ -124,10 +124,17 @@ To ensure technical depth, architectural consistency, and factual accuracy, this
 
 ### Part 4: Complete Operator & Implementation Guide (Low-Level Configuration & Code)
 
-- **Backend Module Integration**:
-  - TypeScript code for registering packages in `packages/backend/src/index.ts` under Backstage's New Backend System.
+- **Backend Module Integration & Deployment Scenarios**:
+  - TypeScript code for registering packages in `packages/backend/src/index.ts` under Backstage's New Backend System across 3 distinct deployment scenarios:
+    1. _Scenario A: Standalone Typesense Plugin_: Registering `@backstage-community/plugin-search-backend-module-typesense` as the primary single search engine.
+    2. _Scenario B: Standalone Vertex AI Plugin_: Registering `@backstage-community/plugin-search-backend-module-vertexai` as the primary single search engine (with native `blendedSearch` support).
+    3. _Scenario C: Federated Hybrid Search Topology_: Registering `@backstage-community/plugin-search-backend-module-hybrid` as the top-level router engine alongside registered sub-engine modules.
 - **Annotated Configuration Reference (`app-config.yaml`)**:
-  - Exhaustive configuration reference covering hybrid routing, Typesense cluster nodes, Vertex AI datastores/apps, and GCS Eventarc parameters.
+  - Exhaustive, fully commented `app-config.yaml` reference divided by deployment scenarios:
+    1. Standalone Typesense configuration (`search.engines.typesense`).
+    2. Standalone Vertex AI configuration (`search.engines.vertexai` including `blendedSearch` datastores/apps).
+    3. Federated Hybrid Search configuration (`search.engine: hybrid`, type routing maps, merge strategies `interleave` vs `score-normalized-sort`, sub-engine collections, and forbidden `blendedSearch` validation guardrails).
+    4. Decoupled GCS Eventarc parameters (`events.modules.gcsEventarc`).
 - **Kubernetes Service & Network Port Mapping**:
   - Kubernetes `Service` manifest explicitly mapping port `80` (GKE Eventarc Forwarder target) to container port `7007`.
 - **Complete GCP IAM Roles Matrix**:
