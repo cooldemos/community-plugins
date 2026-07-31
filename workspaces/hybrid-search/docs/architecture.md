@@ -35,9 +35,9 @@ This master architecture document serves as the comprehensive technical referenc
 │  ├── Section 2: Query & Ingestion Execution Mechanics                             │
 │  └── Section 3: Four Fundamental Architectural Limitations                        │
 ├───────────────────────────────────────────────────────────────────────────────────┤
-│  Part 2: Value Proposition & Technical Mechanics               [Upcoming - Task 2]│
+│  Part 2: Value Proposition & Technical Mechanics               [Active - Task 2]  │
 ├───────────────────────────────────────────────────────────────────────────────────┤
-│  Part 3: System Architecture & Package Specifications          [Upcoming - Task 3]│
+│  Part 3: System Architecture & Package Specifications          [Active - Task 3]  │
 ├───────────────────────────────────────────────────────────────────────────────────┤
 │  Part 4: Complete Operator & Implementation Manual             [Upcoming - Task 4]│
 └───────────────────────────────────────────────────────────────────────────────────┘
@@ -567,3 +567,469 @@ The GCS Eventarc module resolves this through **Differential Reconciliation**:
 
 > [!IMPORTANT] > **Operational Value — Index Hygiene**:
 > Differential reconciliation guarantees that deleted markdown files or renamed documentation sections are immediately purged from search indices upon CI/CD deployment, entirely eliminating 404 "ghost results" without requiring destructive full-index wipes.
+
+---
+
+# Part 3: System Architecture & Package Specifications (Conceptual Breakdown & Diagrams)
+
+---
+
+## Section 1: Package Architecture Breakdown & Core Extension Points
+
+The Hybrid Search Workspace is architected as four modular, loosely coupled backend packages designed for Backstage's New Backend System (`@backstage/backend-plugin-api`). Each package encapsulates a distinct architectural responsibility within the query routing and document ingestion ecosystem.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                            Workspace Package Architecture Map                               │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Top-Level Query Router & Extension Point Registry                                          │
+│  └─► @backstage-community/plugin-search-backend-module-hybrid                              │
+│      ├── Primary Search Engine Interface (registers with standard search core)              │
+│      └── Custom Extension Point (hybridSearchEngineRegistryExtensionPoint)                  │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Domain-Specialized Sub-Engine Modules                                                      │
+│  ├── @backstage-community/plugin-search-backend-module-typesense                            │
+│  │   └── Structured Catalog Metadata Engine (Wildcard Schemas, 100-Doc Buffer Streams)     │
+│  └── @backstage-community/plugin-search-backend-module-vertexai                             │
+│      └── Semantic Documentation Prose Engine (Discovery Engine API, Extractive Answers)     │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Event-Driven Asynchronous Ingestion Webhook Module                                         │
+│  └─► @backstage-community/plugin-events-backend-module-gcs-eventarc                          │
+│      └── Cloud Storage Ingress Webhook (/api/events/gcs, MD5 Reconciliation, DLQ Topics)    │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1. `@backstage-community/plugin-search-backend-module-hybrid` (Federated Query Router)
+
+The `@backstage-community/plugin-search-backend-module-hybrid` package provides the top-level federated query router engine (`HybridSearchEngine`) and defines the dynamic extension point through which sub-engines register themselves.
+
+#### Core Architectural Mechanics:
+
+- **Dynamic Orchestrator**: Intercepts search queries from the primary search backend router, evaluates category mapping rules (`routing`), dispatches queries concurrently to registered sub-engines, and consolidates heterogeneous result sets into a single response.
+- **Upstream vs. Custom Extension Point Resolution**:
+  - `searchEngineRegistryExtensionPoint`: The standard upstream Backstage extension point provided by `@backstage/plugin-search-backend`. Under standard Backstage rules, this registry accepts exactly one search engine instance for the entire portal. The hybrid module registers `HybridSearchEngine` directly into `searchEngineRegistryExtensionPoint` as the single primary search engine.
+  - `hybridSearchEngineRegistryExtensionPoint`: A custom, multi-engine extension point exposed by the hybrid search module itself. It acts as a secondary registry where domain-specialized sub-engine modules (such as Typesense, Vertex AI, or custom third-party backends) register their engine instances alongside the document types they support (`supportsTypes: ['software-catalog', ...]`).
+- **Core Extension Point Comparison**:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                       Search Engine Registry Extension Point Matrix                         │
+├──────────────────────────────────────┬──────────────────────────────────────────────────────┤
+│ `searchEngineRegistryExtensionPoint` │ `hybridSearchEngineRegistryExtensionPoint`           │
+│ (Standard Upstream Backstage Core)   │ (Hybrid Search Workspace Extension Point)            │
+├──────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ • Accepts only 1 primary engine      │ • Accepts N specialized sub-engines                  │
+│ • Throws fatal error on duplicates   │ • Dynamically aggregates sub-engine instances        │
+│ • Monolithic query dispatch          │ • Categorical query routing & parallel fan-out       │
+│ • System-wide uniform scoring        │ • Heterogeneous score normalization & interleaving   │
+└──────────────────────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+---
+
+### 2. `@backstage-community/plugin-search-backend-module-typesense` (Structured Catalog Engine)
+
+The `@backstage-community/plugin-search-backend-module-typesense` package connects Backstage search to Typesense, an open-source, fast in-memory search engine optimized for low-latency keyword matching and metadata filtering.
+
+#### Core Architectural Mechanics:
+
+- **Multi-Collection Concurrent Execution**: When a search query targets multiple document collections managed by Typesense, the engine executes query requests against each Typesense collection concurrently using `Promise.all`, preventing sequential network roundtrips.
+- **Memory-Buffered Writable Indexing Stream**: During document ingestion (e.g. indexing Software Catalog entities), incoming documents are pushed into an in-memory array buffer. When the buffer reaches **100 documents**, the engine flushes the entire batch to Typesense in a single bulk HTTP POST request using `action: 'upsert'`. A final stream flush ensures zero document loss upon job completion.
+- **Auto-Provisioning Wildcard Schemas (`.*`)**: When an indexing job starts for document type `T`, the engine verifies if collection `backstage_${T}` exists. If missing (404), the engine creates the collection automatically using a regex wildcard field rule (`{ "name": ".*", "type": "auto" }`), allowing Typesense to dynamically analyze and index document fields on-the-fly without requiring pre-defined static schemas.
+- **Raw Passthrough Configuration**: Supports unconstrained customization by passing raw parameters straight through to underlying libraries:
+  - `clientOptions`: Forwarded directly to the `typesense` JS client constructor (e.g. `connectionTimeoutSeconds`, `numRetries`, `logLevel`).
+  - `collections`: Allows defining custom static field schemas, including built-in vector search models (e.g. `ts/all-MiniLM-L6-v2` embeddings).
+  - `searchOptions`: Merged directly into outgoing search API payloads (e.g. custom `query_by` weightings).
+
+---
+
+### 3. `@backstage-community/plugin-search-backend-module-vertexai` (Semantic Documentation Engine)
+
+The `@backstage-community/plugin-search-backend-module-vertexai` package integrates Google Cloud Vertex AI Search (Discovery Engine API) into Backstage to power semantic vector search, natural language question answering, and automated snippet generation.
+
+#### Core Architectural Mechanics:
+
+- **Dual Ingestion Operational Modes**:
+  - _Direct Local Indexing (`indexing.enabled: true`)_: Standard Backstage collator streams build HTML and push document batches directly to the Discovery Engine API.
+  - _Decoupled Eventarc Ingestion (`indexing.enabled: false`)_: Bypasses local HTML compilation on the Node.js server using throwaway no-op streams, relying instead on GCS storage events and Eventarc webhooks.
+- **4-Tier Extractive Content Priority Hierarchy**: When converting raw Discovery Engine API response payloads into Backstage `SearchResult` objects, the engine maps content into the Backstage `text` field using a strict priority order:
+  1. _Extractive Answers_ (Highest Priority): Direct sentences answering natural language queries (joined with spaces `' '`).
+  2. _Extractive Segments_ (Medium Priority): Paragraph-level context blocks containing query terms (joined with newlines and ellipses `\n...\n`).
+  3. _Snippets_ (Lowest Priority): Text fragments containing highlighted search terms.
+  4. _Fallback Text_: Raw body text of the indexed document page.
+- **Background Catalog Cleanup Sweeper**: In decoupled mode (`indexing.enabled: false`), standard collator deletion tasks are bypassed. The module runs a background sweeper task (default frequency: 2 hours, initial startup delay: 2 minutes) that scans GCS storage and Vertex AI Search datastores to identify and purge orphaned document assets whose parent catalog entities have been deleted from Backstage.
+
+---
+
+### 4. `@backstage-community/plugin-events-backend-module-gcs-eventarc` (Decoupled Webhook Ingress)
+
+The `@backstage-community/plugin-events-backend-module-gcs-eventarc` package provides an event-driven webhook endpoint (`/api/events/gcs`) that listens for GCS storage events emitted via Google Cloud Eventarc when TechDocs static assets (`search_index.json`) are published by CI/CD pipelines.
+
+#### Core Architectural Mechanics:
+
+- **Non-Blocking Asynchronous Webhook Ingress**: The webhook endpoint receives incoming JSON event payloads (`google.cloud.storage.object.v1.finalized`), acknowledges receipt immediately to Eventarc with HTTP 200/202 OK, and dispatches a background task (`gcs-notifications`) to perform index sync asynchronously without delaying user HTTP threads.
+- **Dual Security & Network Authentication Models**:
+  - _Google OIDC Verification (Public / Cloud Run)_: Uses `google-auth-library` to verify cryptographically signed bearer tokens, enforcing issuer (`https://accounts.google.com`), audience (`${baseUrl}/api/events/gcs`), and expected service account email (`serviceAccountEmail`).
+  - _GKE VPC Network Isolation (Private GKE)_: For private GKE deployments where cluster-local `gke-forwarder` pods deliver events over internal VPC port 80 without OIDC tokens, OIDC verification is set to `false`. Endpoint security is enforced entirely at the network layer using Ingress rules, Cloud Armor edge policies, Gateway API path rewrites, and Kubernetes `NetworkPolicies`.
+- **Pub/Sub Dead-Letter Topic (DLQ) Fault Tolerance**: If webhook delivery fails repeatedly due to transient Backstage server downtime, Eventarc routes unacknowledged event messages to a configured Pub/Sub Dead-Letter Topic (DLQ) for inspection and manual replay.
+
+---
+
+## Section 2: Runtime Conflict Rules & Architectural Constraints
+
+To guarantee system stability, prevent data corruption, and eliminate security vulnerabilities, the Hybrid Search Workspace enforces four strict runtime conflict rules and architectural constraints. Violating these constraints triggers immediate validation errors or fatal startup exceptions during backend initialization.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                            Runtime Conflict & Constraint Matrix                             │
+├──────────────────────────────────────┬──────────────────────────────────────────────────────┤
+│ Architectural Constraint             │ Failure Impact / Enforcement Action                   │
+├──────────────────────────────────────┼──────────────────────────────────────────────────────┤
+│ Mutually Exclusive Ingestion Pathways│ Fatal `BackendStartupError` on server initialization │
+│ `blendedSearch` Configuration Scope  │ Validation Error (restricted to Standalone mode)     │
+│ GKE Private VPC vs Cloud Run OIDC    │ Security Bypass or Webhook 401 Rejection             │
+│ Catalog Forced-Indexing Guardrail    │ Automatic Config Override to `enabled: true` + Warning│
+└──────────────────────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+### 1. Mutually Exclusive Ingestion Pathways (Local Indexing vs. GCS Eventarc)
+
+#### Architectural Constraint Rule:
+
+Direct local TechDocs indexing (`search.engines.vertexai.types.techdocs.indexing.enabled: true` or global `indexing.enabled: true`) and the `@backstage-community/plugin-events-backend-module-gcs-eventarc` webhook module are **strictly mutually exclusive**.
+
+#### Technical Rationale:
+
+If direct local indexing and decoupled Eventarc webhooks were active simultaneously:
+
+1. Standard Backstage scheduled collator tasks would attempt to build TechDocs HTML files locally on the Node.js server and stream document batches directly into Vertex AI Search.
+2. Concurrently, CI/CD pipeline uploads to GCS would emit Eventarc storage events, triggering the webhook module to parse `search_index.json` and ingest documents into the exact same Vertex AI Search Datastore.
+3. This dual-ingestion loop results in severe V8 heap memory expansion on the Node.js server, concurrent write race conditions, API rate limit exhaustion, duplicate document records, and broken delta reconciliation calculations.
+
+#### System Enforcement:
+
+During backend module initialization, the system checks whether both local TechDocs indexing and the GCS Eventarc webhook module are registered. If both are detected, backend startup halts immediately with a fatal `BackendStartupError`.
+
+---
+
+### 2. `blendedSearch` Configuration Scope (Standalone Mode Only)
+
+#### Architectural Constraint Rule:
+
+The `blendedSearch` configuration block (which specifies `projectId`, `location`, `engineId` for a global Google Cloud Search App) is **strictly restricted to Standalone Vertex AI Search Engine mode** (`search.engine: vertexai`).
+
+#### Technical Rationale:
+
+- In **Standalone Mode**, Vertex AI Search is responsible for executing all search queries across the entire developer portal. When a developer submits a global query without category filters, Vertex AI Search delegates query blending across multiple underlying GCP Data Stores to a single, unified Google Cloud Search App (`engineId`).
+- In **Federated Hybrid Mode** (`search.engine: hybrid`), query federation across distinct sub-engines (e.g. routing `software-catalog` to Typesense and `techdocs` to Vertex AI) is managed directly by the Backstage `HybridSearchEngine` router.
+- If `blendedSearch` were configured under Vertex AI in Hybrid mode, a global query would trigger a double-federation loop: the Backstage router would query Typesense while simultaneously querying Vertex AI's global blended app (which itself queries catalog data stores inside GCP). This results in duplicated catalog results, distorted score normalization algorithms, and broken single-engine category filtering.
+
+#### System Enforcement:
+
+During hybrid router startup, the module validates sub-engine configurations. If `blendedSearch` is present under `search.engines.vertexai` while running in Hybrid mode, the backend throws a validation error and aborts initialization.
+
+---
+
+### 3. Network & Security Constraints: GKE Private VPC vs. Cloud Run Public Routing
+
+#### Architectural Constraint Rule:
+
+Google OIDC ID token verification (`events.modules.gcsEventarcWebhook.oidc.enabled`) **must be set to `false`** when deploying on Google Kubernetes Engine (GKE) via internal VPC routing, but **must be set to `true`** when deploying on Google Cloud Run or public HTTPS endpoints.
+
+#### Technical Rationale:
+
+- **GKE Private VPC Architecture**: When Eventarc delivers events to a GKE Service destination, Eventarc automatically provisions a cluster-local **`gke-forwarder`** pod inside a managed namespace (e.g., `eventarc-xxxx`). This forwarder pod subscribes to a Pub/Sub topic and issues direct internal HTTP POST requests across the cluster network to the Backstage Service. Because this forwarder operates entirely within the private VPC and cannot generate Google OIDC tokens, enabling OIDC token verification on the webhook causes all incoming Eventarc requests to be rejected with HTTP 401 Unauthorized errors.
+- **Port 80 Mapping Constraint**: GCP Eventarc's GKE destination spec hardcodes event delivery to TCP port `80` and does not accept custom target port configurations. Therefore, the Kubernetes `Service` manifest for Backstage in GKE must explicitly map Service port `80` to container port `7007`.
+- **Cloud Run Public Architecture**: When Backstage is deployed on Cloud Run, the webhook endpoint is exposed to the public internet via HTTPS. Enabling OIDC verification is mandatory to ensure that only authorized Eventarc triggers carrying cryptographically signed Google ID tokens can invoke the webhook, preventing unauthenticated public index spoofing.
+
+#### System Security Blueprint:
+
+When OIDC verification is disabled for GKE internal VPC routing, network security MUST be enforced at the ingress layer using edge path blocking (NGINX `deny all`, Cloud Armor `403 Forbidden` edge rules, Gateway API `URLRewrite`), combined with a Kubernetes `NetworkPolicy` restricting port `80` access exclusively to Eventarc forwarder namespaces.
+
+---
+
+### 4. Software Catalog Forced-Indexing Guardrail
+
+#### Architectural Constraint Rule:
+
+In the `@backstage-community/plugin-search-backend-module-vertexai` package, indexing for the `software-catalog` document category is **mandatory** (`software-catalog` forced enabled).
+
+#### Technical Rationale:
+
+The Software Catalog represents the fundamental backbone of the Backstage developer portal. Disabling search indexing for catalog entities breaks core portal capabilities, including component discovery, ownership tracking, API lookup, and system mapping.
+
+#### System Enforcement:
+
+During module initialization, the Vertex AI engine inspects configuration settings. If an operator specifies `search.engines.vertexai.types.software-catalog.indexing.enabled: false`, the engine ignores the setting, automatically forces indexing to `enabled: true`, and emits an explicit warning log (`WARNING: software-catalog indexing cannot be disabled; overriding configuration to enabled: true`).
+
+---
+
+## Section 3: Deployment Topologies & Architecture Scenarios
+
+The Hybrid Search Workspace supports three distinct deployment topologies designed for different operational requirements, infrastructure environments, and organizational scales.
+
+### 1. Standalone Typesense Topology
+
+In the Standalone Typesense Topology, standard Backstage core delegates all document indexing and query processing directly to a single Typesense cluster.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                            Standalone Typesense Deployment Topology                         │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  [ Client UI ] ────► HTTP GET /api/search/query                                             │
+│                           │                                                                 │
+│                           ▼                                                                 │
+│              ┌───────────────────────────┐                                                  │
+│              │ Backstage Search Backend  │                                                  │
+│              │ (Primary Engine: Typesense)│                                                 │
+│              └─────────────┬─────────────┘                                                  │
+│                            │                                                                │
+│             ┌──────────────┴──────────────┐                                                 │
+│             │ Direct REST API Calls       │                                                 │
+│             ▼                             ▼                                                 │
+│  ┌───────────────────────┐   ┌───────────────────────┐                                      │
+│  │ Typesense Collection  │   │ Typesense Collection  │                                      │
+│  │ backstage_software-...│   │ backstage_techdocs    │                                      │
+│  └───────────────────────┘   └───────────────────────┘                                      │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Architectural Characteristics:
+
+- **Primary Engine**: `TypesenseSearchEngine` registered directly into `searchEngineRegistryExtensionPoint`.
+- **Ingestion Mechanics**: Standard pull-indexing streams (`CatalogCollator`, `TechDocsCollator`) run inside the Node.js backend memory, buffering documents into 100-item batches and upserting them into `backstage_${type}` collections using wildcard schemas (`.*`).
+- **Query Mechanics**: Queries are executed directly against Typesense collections in parallel (`Promise.all`). Cursor-based deep pagination (`pageCursor`) is natively passed back to the UI.
+- **Trade-offs**: Delivers ultra-low query latency (<10ms) and exact keyword matching, but subjects the Node.js process to V8 heap memory strain during large TechDocs indexing runs and lacks natural language semantic search capabilities.
+
+---
+
+### 2. Standalone Vertex AI Topology
+
+In the Standalone Vertex AI Topology, standard Backstage core delegates all query processing to Google Cloud Vertex AI Search (Discovery Engine API), utilizing a global blended Search App for portal-wide queries.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                            Standalone Vertex AI Deployment Topology                         │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  [ Client UI ] ────► HTTP GET /api/search/query                                             │
+│                           │                                                                 │
+│                           ▼                                                                 │
+│              ┌───────────────────────────┐                                                  │
+│              │ Backstage Search Backend  │                                                  │
+│              │ (Primary Engine: VertexAI)│                                                  │
+│              └─────────────┬─────────────┘                                                  │
+│                            │                                                                │
+│                            ▼                                                                │
+│              ┌───────────────────────────┐                                                  │
+│              │ Global Blended Search App │                                                  │
+│              │ (engineId: backstage-app) │                                                  │
+│              └─────────────┬─────────────┘                                                  │
+│                            │                                                                │
+│             ┌──────────────┴──────────────┐                                                 │
+│             ▼                             ▼                                                 │
+│  ┌───────────────────────┐   ┌───────────────────────┐                                      │
+│  │ Vertex AI Data Store  │   │ Vertex AI Data Store  │                                      │
+│  │ backstage-catalog     │   │ backstage-techdocs    │                                      │
+│  └───────────────────────┘   └───────────────────────┘                                      │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Architectural Characteristics:
+
+- **Primary Engine**: `VertexAISearchEngine` registered directly into `searchEngineRegistryExtensionPoint`.
+- **Global Blended Search App**: Global queries without type filters target `blendedSearch` (`engineId`), delegating multi-datastore query blending and ranking directly to Google Cloud.
+- **Ingestion Mechanics**: Supports either Direct Local Pull Indexing or Decoupled GCS Eventarc Ingestion for TechDocs.
+- **Trade-offs**: Delivers enterprise-grade semantic search, generative natural language answers, and automated snippet extraction across all documents, but requires Google Cloud infrastructure and returns `null` relevance scores for global blended search hits.
+
+---
+
+### 3. Federated Hybrid Search Topology
+
+The Federated Hybrid Search Topology combines specialized sub-engines under the `HybridSearchEngine` orchestrator, routing catalog metadata to Typesense and technical documentation prose to Vertex AI Search with decoupled GCS Eventarc ingestion.
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                            Federated Hybrid Search Deployment Topology                      │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  [ Client UI ] ────► HTTP GET /api/search/query                                             │
+│                           │                                                                 │
+│                           ▼                                                                 │
+│              ┌───────────────────────────┐                                                  │
+│              │   Hybrid Search Router    │ (Primary Engine in searchEngineRegistry)          │
+│              │   (HybridSearchEngine)    │                                                  │
+│              └─────────────┬─────────────┘                                                  │
+│                            │                                                                │
+│             ┌──────────────┴──────────────┐ (Delegates via hybridSearchEngineRegistry)      │
+│             │ Categorical Query Routing   │                                                 │
+│             ▼                             ▼                                                 │
+│  ┌───────────────────────┐   ┌───────────────────────┐                                      │
+│  │ Typesense Sub-Engine  │   │ Vertex AI Sub-Engine  │                                      │
+│  │ (software-catalog)    │   │ (techdocs)            │                                      │
+│  └──────────┬────────────┘   └──────────┬────────────┘                                      │
+│             │                           │                                                   │
+│             ▼                           ▼                                                   │
+│  ┌───────────────────────┐   ┌───────────────────────┐                                      │
+│  │ Typesense Cluster     │   │ Discovery Engine API  │                                      │
+│  │ (In-Memory Keywords)  │   │ (Semantic Vectors)    │                                      │
+│  └───────────────────────┘   └──────────▲────────────┘                                      │
+│                                         │ Decoupled Async Ingestion                         │
+│                              ┌──────────┴────────────┐                                      │
+│                              │ GCS Eventarc Webhook  │                                      │
+│                              │ (/api/events/gcs)     │                                      │
+│                              └───────────────────────┘                                      │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Architectural Characteristics:
+
+- **Orchestration Layer**: `HybridSearchEngine` registered as primary engine, hosting specialized sub-engines via `hybridSearchEngineRegistryExtensionPoint`.
+- **Domain Engine Specialization**:
+  - `software-catalog` $\rightarrow$ Typesense Sub-Engine (low-latency exact keyword lookups, prefix autocompletion, metadata filtering).
+  - `techdocs` $\rightarrow$ Vertex AI Sub-Engine (decoupled GCS Eventarc ingestion, vector embeddings, extractive answers).
+- **Execution & Consolidation**: Targeted single-engine dispatch for category tabs (with full native pagination), parallel `Promise.allSettled` fan-out for global queries (with `interleave` or `score-normalized-sort` merging and single-page slicing).
+- **Ingestion & Process Isolation**: Software catalog indexed via lightweight pull streams into Typesense. TechDocs compiled in CI/CD, published to GCS, and ingested via Eventarc webhooks with MD5 delta reconciliation, completely offloading prose compilation and parsing from the Node.js backend memory.
+
+---
+
+## Section 4: Comprehensive Architecture Sequence Flow Diagrams
+
+The following Mermaid sequence diagrams illustrate the runtime execution flows for query dispatch, decoupled event-driven ingestion, and delta reconciliation.
+
+### Diagram 1: Federated Query Dispatch & Result Merging Flow
+
+This diagram details how an incoming search query is received by the `HybridSearchEngine`, evaluated for categorical routing, dispatched concurrently across sub-engines with timeout isolation, normalized, merged, and returned to the client.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User as Client / Search UI
+    participant Router as Search Backend Router
+    participant Hybrid as HybridSearchEngine Orchestrator
+    participant TS as Typesense Sub-Engine
+    participant VAI as Vertex AI Sub-Engine
+    participant Merger as Result Score Merger
+
+    User->>Router: GET /api/search/query?term=auth&types[]=software-catalog&types[]=techdocs
+    Router->>Hybrid: query(SearchQuery { term: 'auth', types: ['software-catalog', 'techdocs'] })
+
+    Note over Hybrid: Evaluate Request Document Types
+
+    alt Single Type Mapped (Targeted Direct Dispatch)
+        Hybrid->>TS: query(SearchQuery) [Targeted Engine]
+        TS-->>Hybrid: Return Native Matches + pageCursor
+        Hybrid-->>Router: Return SearchResultResponse (Native Cursor Preserved)
+        Router-->>User: HTTP 200 OK (Full Native Pagination Enabled)
+    else Multiple Types or Empty Types (Federated Multi-Engine Fan-Out)
+        Note over Hybrid: Initiate Asynchronous Parallel Dispatch (Promise.allSettled)
+
+        par Parallel Execution with Timeout Isolation
+            Hybrid->>TS: query(SearchQuery) [Software Catalog]
+            Note over TS: Fast In-Memory Search (BM25 Keywords)
+            TS-->>Hybrid: Fulfilled: Catalog Matches (Raw Scores e.g. [450, 210])
+        and
+            Hybrid->>VAI: query(SearchQuery) [TechDocs Prose]
+            Note over VAI: Vector Semantic Search & Extractive Answers
+            VAI-->>Hybrid: Fulfilled: TechDocs Matches (Raw Scores e.g. [0.92, 0.78])
+        end
+
+        Note over Hybrid: Fault Isolation: Suppress Rejected Promises / Timeouts
+
+        Hybrid->>Merger: merge(Results, strategy: 'score-normalized-sort')
+
+        Note over Merger: Apply Dual-Mode Score Normalization<br/>Ratio: raw_score / max_score<br/>Rank Fallback: 1.0 - (index / total)
+        Merger-->>Hybrid: Consolidated Ordered Result Array
+
+        Note over Hybrid: Slice Array to pageLimit & Omit pageCursor (undefined)
+        Hybrid-->>Router: Return SearchResultResponse (pageCursor: undefined)
+        Router-->>User: HTTP 200 OK (Consolidated Blended Page 1 Results)
+    end
+```
+
+---
+
+### Diagram 2: Decoupled Eventarc Ingestion & Catalog Enrichment Flow
+
+This diagram illustrates how a TechDocs documentation update published by CI/CD triggers a GCS storage event, passes through Eventarc routing, hits the private Backstage webhook endpoint, enriches documents with Catalog Service metadata, and ingests active documents into Vertex AI Search.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor CICD as External CI/CD Pipeline
+    participant GCS as GCS Storage Bucket
+    participant Eventarc as GCP Eventarc Trigger
+    participant FWD as GKE Eventarc Forwarder Pod
+    participant Webhook as Webhook Endpoint (/api/events/gcs)
+    participant EventBus as Internal Event Bus
+    participant Catalog as Backstage Catalog Service
+    participant VAI as Vertex AI Search API
+
+    CICD->>GCS: Upload search_index.json (GCS Generation N)
+    Note over GCS: GCS emits google.cloud.storage.object.v1.finalized event
+    GCS-->>Eventarc: Trigger Storage Event (Bucket, Object Path, Gen N)
+    Eventarc->>FWD: Publish to Managed Pub/Sub Topic
+
+    Note over FWD: Forwarder Pod pulls from Pub/Sub
+    FWD->>Webhook: Private HTTP POST /api/events/gcs (Port 80 -> Port 7007)
+
+    Note over Webhook: Validate Request (Skip OIDC for GKE VPC)
+    Webhook-->>FWD: Respond HTTP 200 OK (Non-Blocking Ingress)
+
+    Webhook->>EventBus: Publish 'gcs-notifications' Event
+
+    Note over EventBus: Asynchronous Background Ingestion Task Starts
+    EventBus->>GCS: Download search_index.json (Generation N)
+    GCS-->>EventBus: Return Raw Document Pages Array
+
+    EventBus->>Catalog: Lookup Parent Entity (Component:default/auth-service)
+    Catalog-->>EventBus: Return Catalog Entity Metadata (owner, lifecycle, type, annotations)
+
+    Note over EventBus: Enrich Documents & Compute MD5 Document IDs<br/>canonicalPath = /docs/default/component/auth-service/index.html<br/>docId = md5(canonicalPath)
+
+    EventBus->>VAI: Import Enriched Active Documents (batchSize: 100)
+    VAI-->>EventBus: Acknowledge Active Document Ingestion
+```
+
+---
+
+### Diagram 3: Delta Reconciliation & Throttled Document Deletion Flow
+
+This diagram details the differential reconciliation algorithm executed during asynchronous background ingestion. The worker fetches historical GCS generation $N-1$, computes set differences against current generation $N$, and issues throttled API deletion calls to purge stale, deleted documentation pages.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Worker as Background Ingestion Worker
+    participant GCS as GCS Object Versioning History
+    participant Reconciler as Delta Set Reconciler
+    participant VAI as Vertex AI Search API
+
+    Note over Worker: Generation N Active Ingestion Complete
+    Worker->>GCS: Query Historical Generation (Gen N-1) for search_index.json
+    GCS-->>Worker: Return Generation N-1 Document Manifest
+
+    Worker->>Reconciler: computeDelta(Gen_N_Docs, Gen_N-1_Docs)
+
+    Note over Reconciler: Build Document ID Sets<br/>Set_current = { md5(p) for p in Gen_N }<br/>Set_previous = { md5(p) for p in Gen_N-1 }
+
+    Note over Reconciler: Set Arithmetic Subtraction<br/>Set_deleted = Set_previous \ Set_current
+    Reconciler-->>Worker: Return Set_deleted (IDs of Deleted / Renamed Pages)
+
+    alt Set_deleted is Non-Empty
+        Note over Worker: Initiate Throttled Document Purge (maxConcurrency: 5)
+
+        loop For Each Batch of Deleted Document IDs
+            Worker->>VAI: Delete Document Request (docId)
+            VAI-->>Worker: HTTP 200 OK (Document Purged)
+        end
+
+        Note over Worker: Log Reconciliation Summary:<br/>Ingested N Active Docs, Purged M Stale Docs
+    else Set_deleted is Empty
+        Note over Worker: Zero Deleted Pages Detected; Reconciliation Complete
+    end
+```
