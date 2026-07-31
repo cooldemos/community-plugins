@@ -13,7 +13,9 @@ To ensure the resulting document provides maximum technical value, all sections 
 1. **Factual, Plain Language**: Zero sales or marketing language. Avoid terms like "seamless", "powerful", "game-changing", "revolutionary", or "state-of-the-art". State mechanisms, algorithms, behaviors, and trade-offs directly.
 2. **Sufficiently Verbose Explanations**: Provide complete, detailed prose explaining _how_ and _why_ internal components operate. Avoid superficial high-level schematics or hand-waving bullet points that leave technical gaps.
 3. **No Convoluted Expressions**: Use clear, direct sentences. Avoid unnecessary jargon, passive voice, or convoluted phrasing.
-4. **Conceptual Focus Over Code Overload**: Foundational descriptions and technical limitations must favor deep conceptual explanations of architecture, component roles, and system boundaries. Avoid flooding prose with code snippets, line numbers, or raw implementation details.
+4. **Structural Split (Conceptual Core vs. Low-Level Operator Guide)**:
+   - **Parts 1, 2, and 3 (Conceptual & Architectural Analysis)**: Must strictly favor high-level conceptual explanations, architectural mechanics, component roles, data flow, value propositions, and visual Mermaid diagrams. Avoid flooding prose with code snippets, line numbers, or raw implementation code.
+   - **Part 4 (Operator & Implementation Manual)**: Contains all hands-on, low-level technical and operational details (TypeScript backend registration, full annotated `app-config.yaml`, Terraform HCL manifests, network security runbooks, Kubernetes Service mappings, and CLI testing commands) so operators can deploy and operate the solution.
 
 ---
 
@@ -49,7 +51,7 @@ The **Hybrid Search Workspace** provides multi-engine search routing and asynchr
 
 ---
 
-### Part 2: Value Proposition & Technical Mechanics of Hybrid Search
+### Part 2: Value Proposition & Technical Mechanics of Hybrid Search (Conceptual Analysis)
 
 - **Federated Multi-Engine Search Routing**:
   - Categorical query routing based on document `types`.
@@ -72,26 +74,17 @@ The **Hybrid Search Workspace** provides multi-engine search routing and asynchr
 
 ---
 
-### Part 3: System Architecture & Package Specifications
+### Part 3: System Architecture & Package Specifications (Conceptual Breakdown & Diagrams)
 
 - **Package Architecture Breakdown**:
   1. `@backstage-community/plugin-search-backend-module-hybrid`:
-     - Router engine implementation (`HybridSearchEngine`).
-     - Extension point (`hybridSearchEngineRegistryExtensionPoint`) for backend module registration.
+     - Router engine implementation (`HybridSearchEngine`) and extension point (`hybridSearchEngineRegistryExtensionPoint`) for backend module registration.
   2. `@backstage-community/plugin-search-backend-module-typesense`:
-     - Multi-collection concurrent execution using `Promise.all`.
-     - Memory-buffered writable streams with automatic flushing at 100 documents or stream end.
-     - Auto-provisioning collection schemas with wildcard field rules (`{ "name": ".*", "type": "auto" }`).
-     - Configuration passthroughs for connection options, custom schemas, and vector search embeddings (`ts/all-MiniLM-L6-v2`).
+     - Multi-collection concurrent execution, memory-buffered writable streams (batching at 100 documents), auto-provisioning wildcard schemas (`.*`), and raw client/query passthrough capabilities.
   3. `@backstage-community/plugin-search-backend-module-vertexai`:
-     - Google Cloud Discovery Engine API integration.
-     - Direct local indexing mode vs. decoupled Eventarc mode.
-     - Extractive response content hierarchy (Extractive Answers > Extractive Segments > Snippets > Fallback Text).
-     - Background catalog cleanup sweeper with configurable startup delay.
+     - Google Cloud Discovery Engine API integration, direct local indexing vs. decoupled Eventarc mode, extractive content priority hierarchy (Answers > Segments > Snippets > Fallback Text), and background catalog cleanup sweeper.
   4. `@backstage-community/plugin-events-backend-module-gcs-eventarc`:
-     - Webhook endpoint `/api/events/gcs`.
-     - Dual security models: Google OIDC ID token validation vs. private GKE VPC internal forwarder pod network isolation.
-     - Dead-Letter Topic (DLQ) integration for delivery fault tolerance.
+     - Webhook endpoint `/api/events/gcs`, dual security models (Google OIDC verification vs. GKE VPC network isolation), and Pub/Sub Dead-Letter Topic (DLQ) fault tolerance.
 - **Deployment Topologies**:
   - Standalone Engine Mode vs. Federated Hybrid Router Mode.
 - **Architecture Sequence Diagrams (Mermaid)**:
@@ -101,7 +94,7 @@ The **Hybrid Search Workspace** provides multi-engine search routing and asynchr
 
 ---
 
-### Part 4: Complete Operator & Implementation Guide
+### Part 4: Complete Operator & Implementation Guide (Low-Level Configuration & Code)
 
 - **Backend Module Integration**:
   - TypeScript code for registering packages in `packages/backend/src/index.ts` under Backstage's New Backend System.
