@@ -117,9 +117,9 @@
   - Document `blendedSearch` Configuration Scope (Standalone mode only).
   - Document GKE Private VPC (OIDC disabled, Port 80 mapping) vs. Cloud Run Public Routing (OIDC enabled).
 
-- [ ] **Step 3: Write Deployment Topologies**
+- [ ] **Step 3: Write Deployment Topologies & Architecture Scenarios**
 
-  - Detail Standalone Engine Mode vs. Federated Hybrid Router Mode with architecture diagrams.
+  - Detail Standalone Engine Topologies (Standalone Typesense vs Standalone Vertex AI with `blendedSearch`) vs. Federated Hybrid Search Router Topology with architectural breakdowns and diagrams.
 
 - [ ] **Step 4: Add Architecture Sequence Diagrams (Mermaid)**
   - Construct 3 detailed Mermaid diagrams:

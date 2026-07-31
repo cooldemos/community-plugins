@@ -113,8 +113,12 @@ To ensure technical depth, architectural consistency, and factual accuracy, this
   - _Mutually Exclusive Ingestion Pipelines_: Direct local TechDocs indexing (`indexing.enabled: true`) and GCS Eventarc webhook module are strictly mutually exclusive; concurrent activation triggers a fatal initialization startup error.
   - _`blendedSearch` Configuration Scope_: `blendedSearch` configuration is strictly restricted to Standalone mode; configuring it in Hybrid mode violates federated routing and triggers a validation error.
   - _GKE Private VPC vs. Cloud Run Security Constraints_: OIDC token verification is mandatory for public Cloud Run routes, but must be set to `false` for internal GKE VPC routing because GKE managed forwarder pods do not attach OIDC tokens over cluster-local port 80.
-- **Deployment Topologies**:
-  - Standalone Engine Mode vs. Federated Hybrid Router Mode.
+- **Deployment Topologies & Architecture Scenarios**:
+  - _Standalone Engine Topologies_:
+    1. _Standalone Typesense Engine Topology_: Core Backstage backend delegating all document indexing and search queries directly to a single Typesense cluster.
+    2. _Standalone Vertex AI Engine Topology_: Core Backstage backend delegating search queries to Google Cloud Discovery Engine API (supporting direct pull indexing vs. decoupled GCS Eventarc ingestion, with native `blendedSearch` datastore aggregation).
+  - _Federated Hybrid Search Topology_:
+    - Top-level `HybridSearchEngine` router registered as the primary search engine, orchestrating categorical query routing, asynchronous parallel sub-engine dispatch (`Promise.allSettled`), result score merging (`interleave` vs `score-normalized-sort`), and decoupled event-driven ingestion across specialized sub-engines.
 - **Architecture Sequence Diagrams (Mermaid)**:
   - Federated Query Dispatch & Result Merging.
   - Decoupled Eventarc Ingestion & Catalog Enrichment.
