@@ -1620,6 +1620,33 @@ resource "google_eventarc_trigger" "gcs_to_backstage_gke" {
   service_account = google_service_account.eventarc_trigger_sa.email
 }
 
+# Option B: Cloud Run Destination (Public HTTPS Routing)
+resource "google_eventarc_trigger" "gcs_to_backstage_cloudrun" {
+  name     = "gcs-to-backstage-cloudrun"
+  location = var.region
+  project  = var.project_id
+
+  matching_criteria {
+    attribute = "type"
+    value     = "google.cloud.storage.object.v1.finalized"
+  }
+
+  matching_criteria {
+    attribute = "bucket"
+    value     = var.techdocs_bucket_name
+  }
+
+  destination {
+    cloud_run_service {
+      service = "backstage-backend"
+      region  = var.region
+      path    = "/api/events/gcs"
+    }
+  }
+
+  service_account = google_service_account.eventarc_trigger_sa.email
+}
+
 # ============================================================================
 # 5. CUSTOMER-MANAGED ENCRYPTION KEYS (CMEK KMS Support)
 # ============================================================================
