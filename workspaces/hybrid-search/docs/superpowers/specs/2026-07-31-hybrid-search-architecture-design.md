@@ -16,6 +16,7 @@ To ensure the resulting document provides maximum technical value, all sections 
 4. **Structural Split (Conceptual Core vs. Low-Level Operator Guide)**:
    - **Parts 1, 2, and 3 (Conceptual & Architectural Analysis)**: Must strictly favor high-level conceptual explanations, architectural mechanics, component roles, data flow, value propositions, and visual Mermaid diagrams. Avoid flooding prose with code snippets, line numbers, or raw implementation code.
    - **Part 4 (Operator & Implementation Manual)**: Contains all hands-on, low-level technical and operational details (TypeScript backend registration, full annotated `app-config.yaml`, Terraform HCL manifests, network security runbooks, Kubernetes Service mappings, and CLI testing commands) so operators can deploy and operate the solution.
+5. **Leverage Installed Documentation Skill**: All section authoring must follow the principles of the installed `documentation` skill (`.agents/skills/documentation`): write directly for platform operators/architects, lead with high-value technical context, illustrate with diagrams and explicit configuration, link to reference materials without duplicating text, and structure architecture and runbook sections according to established documentation patterns.
 
 ---
 

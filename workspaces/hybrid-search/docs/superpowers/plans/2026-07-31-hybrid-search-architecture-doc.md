@@ -1,6 +1,6 @@
 # Hybrid Search Architecture Document Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Apply the installed `documentation` skill (`.agents/skills/documentation`) for authoring all technical architecture and operator runbook sections. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Completely rewrite `workspaces/hybrid-search/docs/architecture.md` from scratch to create an authoritative, comprehensive 4-part technical reference and operator manual for the Hybrid Search Workspace.
 
@@ -13,6 +13,7 @@
 - Target File: `workspaces/hybrid-search/docs/architecture.md`
 - Design Spec: `workspaces/hybrid-search/docs/superpowers/specs/2026-07-31-hybrid-search-architecture-design.md`
 - Factual plain language: Zero sales or marketing buzzwords.
+- Documentation Skill: Apply `.agents/skills/documentation` principles (audience focus, showing vs telling, lead with key context, link don't duplicate).
 - Tone & Style: Verbose, thorough prose explaining _how_ and _why_ internal components operate.
 - Structural Split: Parts 1-3 are strictly conceptual prose, LaTeX math, and Mermaid diagrams (no implementation code blocks). Part 4 contains all low-level technical code, YAML configs, Terraform manifests, and CLI commands.
 
