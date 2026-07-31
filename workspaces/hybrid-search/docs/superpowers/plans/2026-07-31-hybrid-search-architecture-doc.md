@@ -177,7 +177,7 @@
 
 - [ ] **Step 1: Spec Coverage & Completeness Verification**
 
-  - Verify every section in `workpowers/hybrid-search/docs/superpowers/specs/2026-07-31-hybrid-search-architecture-design.md` is fully addressed.
+  - Verify every section in `workspaces/hybrid-search/docs/superpowers/specs/2026-07-31-hybrid-search-architecture-design.md` is fully addressed.
 
 - [ ] **Step 2: Structural Split Verification**
 
