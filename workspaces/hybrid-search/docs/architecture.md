@@ -162,6 +162,8 @@ The Hybrid Search Workspace is architected as four modular, backend packages des
 
 ## Section 2: Hybrid Search Router Mechanics
 
+### Categorical Routing & Query Dispatch
+
 The core architectural solution to the limitations of standard Backstage search is **Federated Multi-Engine Routing**. Rather than forcing all portal document categories into a single, uniform search engine, the Hybrid Search Architecture introduces a dynamic query orchestrator (`HybridSearchEngine`) that intercepts incoming search requests, evaluates document category filters, dispatches queries to domain-specialized sub-engines, and consolidates the results into a unified response.
 
 In a developer portal, search queries specify target document categories through request parameters (such as `types[]=software-catalog` or `types[]=techdocs`). Rather than executing every query against a single search backend, the router evaluates these category parameters against a configured routing matrix to select the optimal dispatch pattern. When a query targets a single category, the router forwards the request directly to the mapped search engine. Conversely, when a query spans multiple categories or requests a portal-wide search, the router broadcasts the query concurrently across all relevant sub-engines, aggregating and normalizing downstream responses into a unified result set.
@@ -209,10 +211,14 @@ The following sequence illustrates how the `HybridSearchEngine` intercepts incom
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Fault Isolation & Parallel Execution
+
 Querying multiple search backends in parallel introduces operational risks: slow network links can delay user responses, and individual backend failures can crash the search request. The hybrid router prevents this through two core mechanisms:
 
 - **Parallel Execution**: Dispatches queries concurrently across sub-engines so overall latency is bounded by the slowest responding engine rather than the sum of all response times.
 - **Fault Isolation**: Suppresses single-engine errors and enforces strict per-engine timeouts, ensuring that if one backend fails or responds slowly, the router still returns valid results from all healthy engines.
+
+### Result Aggregation & Score Merging
 
 When a federated search query returns match payloads from multiple search backends, the router must consolidate these distinct arrays into a single ordered result list.
 
@@ -250,6 +256,8 @@ To resolve this, the hybrid router provides two configurable merging strategies:
 - **Relative Max-Score Normalization**: Standardizes all scores onto a $[0.0, 1.0]$ scale prior to executing a global descending sort:
   - **Scored Engines**: Scales each raw score relative to the maximum score in that engine's current batch ($\text{score} / \text{max\_score}$), assigning $1.0$ to the top hit and scaling remaining hits proportionally.
   - **Rank-Only Engines**: Generates a synthetic score decaying linearly from $1.0$ down to $0.0$ based on rank position ($1.0 - \text{index} / \text{total\_items}$) for backends that omit numerical scores.
+
+### Pagination Mechanics
 
 Pagination mechanics in the hybrid architecture depend on whether a query targets a single engine or federates across multiple backends:
 
