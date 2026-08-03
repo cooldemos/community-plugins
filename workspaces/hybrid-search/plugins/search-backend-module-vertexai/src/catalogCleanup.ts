@@ -50,26 +50,26 @@ export async function runCatalogCleanupSweeper(options: {
     // Retrieve system credentials to authenticate the catalog client call
     const credentials = await auth.getOwnServiceCredentials();
 
-    // 1. Fetch all active components from Catalog
+    // 1. Fetch all active entities from Catalog
     const catalogResponse = await catalog.getEntities(
       {
-        filter: { kind: 'component' },
         fields: ['metadata.name', 'metadata.namespace', 'kind'],
       },
       { credentials },
     );
 
     const activeEntities = catalogResponse.items || [];
-    const activeComponentKeys = new Set(
+    const activeEntityKeys = new Set(
       activeEntities.map((e: any) => {
         const name = e.metadata.name;
         const namespace = e.metadata.namespace || 'default';
-        return `${namespace}/component/${name}`.toLowerCase();
+        const kind = e.kind || 'component';
+        return `${namespace}/${kind}/${name}`.toLowerCase();
       }),
     );
 
     logger.info(
-      `TechDocs Orphan Sweeper: found ${activeComponentKeys.size} active components in catalog.`,
+      `TechDocs Orphan Sweeper: found ${activeEntityKeys.size} active entities in catalog.`,
     );
 
     // 2. List all files in the TechDocs bucket
@@ -84,12 +84,9 @@ export async function runCatalogCleanupSweeper(options: {
         const kind = parts[1];
         const name = parts[2];
 
-        // We only care about component folders
-        if (kind.toLowerCase() === 'component') {
-          const key = `${namespace}/${kind}/${name}`.toLowerCase();
-          if (!activeComponentKeys.has(key)) {
-            orphanPrefixes.add(`${namespace}/${kind}/${name}`);
-          }
+        const key = `${namespace}/${kind}/${name}`.toLowerCase();
+        if (!activeEntityKeys.has(key)) {
+          orphanPrefixes.add(`${namespace}/${kind}/${name}`);
         }
       }
     }

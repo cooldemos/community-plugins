@@ -421,6 +421,35 @@ Vertex AI Search evaluates queries dynamically and returns content at multiple l
 - **Search Snippets**: Traditional keyword match fragments containing highlighted query terms bounded by contextual text. These apply when Vertex AI Search processes a targeted keyword lookup rather than a semantic question.
 - **Fallback Document Body**: If Vertex AI Search returns no extractive answers, segments, or snippets for a matching record, the module falls back to the raw body text of the indexed document page. This acts as a safety guardrail to ensure every search result displays a non-empty summary.
 
+### Asynchronous Catalog & Storage Reconciliation (Sweeper Task)
+
+Decoupled deployments offload documentation builds and search indexing to external CI/CD pipelines and storage webhooks (detailed in Section 5). Because in-process Backstage collators are bypassed, deleting an entity from the Software Catalog does not trigger automatic index cleanup. Without explicit reconciliation, removed components leave behind orphaned documentation files in Google Cloud Storage (GCS) and stale search records in Vertex AI Search.
+
+To maintain index consistency, the Vertex AI Search module runs a background cleanup task (`techdocs-orphan-sweeper`) that purges orphaned documentation from GCS and Vertex AI Search.
+
+#### Task Activation & Scheduling Guardrails
+
+The sweeper task is managed by Backstage's `SchedulerService` and operates under strict guardrails to prevent resource contention and startup race conditions:
+
+- **Activation Condition**: The task runs automatically when decoupled ingestion is active and cleanup is enabled. If direct in-process collator indexing is active, the sweeper disables itself because collators handle catalog synchronization natively.
+- **Configurable Cadence**: The sweeper executes on a low-frequency schedule (defaulting to every two hours) to minimize operational overhead on backend services.
+- **Startup Bootstrapping Delay**: Enforces a mandatory initial startup delay (defaulting to two minutes) to ensure `CatalogService` finishes bootstrapping before orphan evaluation begins.
+
+#### Sweep Reconciliation Workflow
+
+When executed, `runCatalogCleanupSweeper` reconciles live portal entities against cloud storage and search indices through a 5-step reconciliation pipeline:
+
+1. **Active Entity Extraction**: Queries the Catalog Service to construct a lookup set of active canonical entity references (`<namespace>/<kind>/<name>`).
+2. **Storage Footprint Inspection**: Scans directory prefixes in the TechDocs Cloud Storage bucket to discover all published documentation assets.
+3. **Orphan Detection**: Cross-references storage directory paths against live catalog references to isolate orphaned documentation folders.
+4. **Document ID Resolution**: Reads the `search_index.json` file of each orphaned folder to derive the canonical page paths and deterministic document IDs generated during initial ingestion.
+5. **Dual-Target Purging**: Deletes matching document records from the Vertex AI Search Data Store, then purges the corresponding static HTML and media files from Cloud Storage.
+
+#### Operational Resilience & Design Trade-Offs
+
+- **Resilience Against Missing Index Files**: If an orphaned component's `search_index.json` file is missing or corrupted, the sweeper logs a warning, skips Discovery Engine document deletion calls, and proceeds directly to wiping the orphaned static files from GCS, preventing deadlocks or stuck cleanup runs.
+- **Low-Overhead Eventual Consistency**: Operating a background cleanup task does not negate the performance benefits of off-band Eventarc ingestion. Heavy, high-frequency operations—such as parsing static HTML and streaming document indices during publish events—remain completely offloaded from the Backstage Node.js server. The sweeper operates purely as a low-frequency, lightweight garbage collector for rare entity deletions, securing eventual index consistency while preserving server responsiveness.
+
 ## Section 5: GCS Eventarc Ingestion Webhook Architecture
 
 ### Architecture
@@ -497,18 +526,29 @@ By leveraging GCS storage mutation events and object versioning, the Eventarc we
 3. **Delta Calculation**: By subtracting the active document set from the historical set, the worker identifies deleted or moved pages.
 4. **Synchronized Ingestion & Purging**: Active pages are batch-ingested into the search backend, while deleted pages are explicitly removed using throttled deletion requests to avoid API rate limits.
 
-### Webhook Authentication & Ingress Security
+### Authentication
 
-The GCS Eventarc module supports two security models, determined by whether Eventarc delivers notifications to a public Cloud Run endpoint or a private GKE cluster destination. By default, OIDC authentication is disabled (`enabled: false`).
+The GCS Eventarc webhook module supports two authentication models depending on whether notifications are delivered to a public Cloud Run endpoint or a private GKE cluster destination:
 
-- **Cloud Run Destinations (OIDC Authorization)**: When targeting Cloud Run, operators should enable OIDC verification (`enabled: true`). Eventarc automatically generates and attaches a signed Google OIDC ID token in the `Authorization: Bearer` request header. The webhook validates the token's cryptographic signature, issuer (`https://accounts.google.com`), target audience, and configured service account email.
-- **GKE Destinations (Network Layer Isolation)**: When targeting GKE services, Eventarc routes events over private VPC lines via an internal `gke-forwarder` pod. Because the forwarder pod does not attach OIDC tokens, OIDC authentication must remain disabled (`enabled: false`).
+- **Cloud Run**: When targeting Cloud Run, OIDC authentication should be enabled. Eventarc automatically generates and attaches a cryptographically signed Google OIDC ID token in the `Authorization: Bearer` request header. The webhook validates the token's signature, issuer (`https://accounts.google.com`), target audience URL, and service account email before accepting the event payload.
+- **Private GKE Destinations**: When targeting GKE services, Eventarc routes events over internal network paths via an in-cluster `gke-forwarder` pod. Because `gke-forwarder` pods deliver traffic internally without generating Google OIDC tokens, OIDC verification must be disabled (`enabled: false`). Security is instead enforced at the network layer.
 
-When OIDC authentication is disabled for GKE deployments, security should be enforced at the network ingress layer to prevent unauthorized external access to `/api/events/gcs`. Operators can implement one or more of the following options:
+### Networking and Network Security
 
-- **Edge Path Rewriting**: GKE Gateway API `URLRewrite` rules rewrite public requests targeting `/api/events/gcs` to an unmapped path, returning a `404 Not Found` to public traffic while permitting internal Eventarc routing.
-- **Ingress Layer Blocking**: Edge security policies—such as Google Cloud Armor 403 deny rules or NGINX Ingress blocking rules—drop public requests matching the webhook route at the load balancer.
-- **Kubernetes NetworkPolicies**: Cluster-level `NetworkPolicies` isolate port 80 ingress, restricting traffic exclusively to Eventarc's managed namespace (`eventarc-*`).
+Deploying event-driven webhooks on Kubernetes requires aligning network transport constraints with edge security policies.
+
+A critical architectural constraint when deploying Eventarc with GKE destinations is that Google Cloud Eventarc's GKE destination specification hardcodes HTTP event delivery strictly to **port 80** on target Kubernetes `Service` resources. The GCP Eventarc API schema does not support custom target port parameters for GKE destinations.
+
+Because Backstage Node.js backend processes default to listening on container port `7007`, Eventarc's cluster-local forwarder pod cannot reach the backend process directly on port 7007. To bridge this constraint, operators must configure the Kubernetes `Service` manifest for Backstage to expose port 80 mapped to target port 7007.
+
+Because OIDC verification is disabled for GKE deployments, public access to `/api/events/gcs` must be blocked at the edge layer to prevent unauthorized index updates.
+
+Operators can enforce security using one of the following controls:
+
+- **Edge Path Rewriting**: GKE Gateway API `URLRewrite` rules rewrite `/api/events/gcs` to an unmapped path, returning HTTP `404 Not Found` to public traffic while permitting internal Eventarc routing.
+- **Cloud Armor Edge Blocking**: Google Cloud Armor security policies drop external HTTP requests matching `/api/events/gcs` with a 403 Forbidden rule at the edge load balancer.
+- **Ingress Controller Path Blocking**: NGINX Ingress or cluster ingress rules block external traffic targeting `/api/events/gcs` before routing to backend services.
+- **Kubernetes NetworkPolicies**: Cluster-level `NetworkPolicies` restrict port 80 ingress access exclusively to Eventarc's managed namespace (`eventarc-*`).
 
 # Part 3: Deployment & Operations Manual
 

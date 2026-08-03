@@ -178,7 +178,7 @@ describe('runCatalogCleanupSweeper', () => {
 
     expect(mockCatalog.getEntities).toHaveBeenCalledWith(
       expect.objectContaining({
-        filter: { kind: 'component' },
+        fields: ['metadata.name', 'metadata.namespace', 'kind'],
       }),
       expect.objectContaining({
         credentials: { token: 'mock-token' },
