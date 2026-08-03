@@ -488,7 +488,7 @@ The module constructs deterministic document IDs by hashing normalized relative 
 
 ### Delta Synchronization & Cleanup
 
-In standard Backstage deployments, pull-based collators execute on fixed schedules. Between scans, search results become stale, serving outdated content or leading users to 404 links for deleted pages. Furthermore, because collators process manifests without historical version tracking, deleted or renamed pages persist in the search backend until a full index re-index occurs.
+In standard Backstage deployments, pull-based collators execute on fixed schedules. Between scans, search indices serve stale content or route users to 404 links for deleted pages. Furthermore, external search backends that store documents out-of-band do not automatically purge removed pages during standard collator re-indexing without explicit deletion requests.
 
 By leveraging GCS storage mutation events and object versioning, the Eventarc webhook triggers instant synchronization on publish and automatically purges obsolete entries through delta calculation:
 
