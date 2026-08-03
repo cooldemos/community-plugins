@@ -484,7 +484,7 @@ When processing an incoming manifest, the background worker queries the Backstag
 
 Search engines require stable document identifiers to execute idempotent updates and targeted deletions across documentation builds.
 
-The module constructs stable document IDs by computing MD5 hashes over canonicalized relative paths (`/docs/<namespace>/<kind>/<name>/<location>`). Canonicalization normalizes string casing, trims slashes, and strips redundant file extensions such as `index.html`. This guarantees that successive documentation updates produce identical document identifiers, allowing search engines to update existing entries cleanly without creating duplicate records.
+The module generates stable document IDs by hashing canonicalized relative paths. Normalizing path casing, slashes, and redundant file extensions guarantees that successive updates produce identical IDs, enabling search backends to update existing entries cleanly without creating duplicate records.
 
 ### Differential Reconciliation
 
