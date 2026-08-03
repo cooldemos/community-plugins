@@ -650,26 +650,44 @@ All Google Cloud infrastructure required for Vertex AI Search and event-driven T
 The manifest below organizes resources into logical blocks, with explicit comments indicating **when** each resource is required based on your deployment choices (Standalone vs. Hybrid Router mode, and Direct Collator vs. Decoupled Eventarc Ingestion):
 
 ```hcl
-# ============================================================================
-# 1. BASE DATA STORES & SCHEMAS (REQUIRED for all deployment modes)
-# Provision one Data Store and schema for each Backstage content type.
-# ============================================================================
-
-resource "google_discovery_engine_data_store" "techdocs_datastore" {
-  location                    = var.region # 'global', 'us', or 'eu'
-  data_store_id               = "techdocs-datastore"
-  display_name                = "Backstage TechDocs Data Store"
-  industry_vertical           = "GENERIC"
-  solution_types              = ["SOLUTION_TYPE_SEARCH"]
-  content_config              = "NO_CONTENT"
-  create_advanced_site_search = false
+locals {
+  # Define all Backstage document categories/types to index in your portal
+  datastores = {
+    techdocs = {
+      display_name         = "Backstage TechDocs Store"
+      create_dedicated_app = true # Set true if a dedicated Search App is needed for custom query tuning
+    }
+    catalog = {
+      display_name         = "Backstage Catalog Store"
+      create_dedicated_app = false # Uses global blended Search App
+    }
+  }
 }
 
-resource "google_discovery_engine_schema" "techdocs_schema" {
-  location      = google_discovery_engine_data_store.techdocs_datastore.location
-  data_store_id = google_discovery_engine_data_store.techdocs_datastore.data_store_id
+# ============================================================================
+# 1. BASE DATA STORES & SCHEMAS (REQUIRED for all deployment modes)
+# Dynamically provisions one Data Store & schema per configured content type.
+# ============================================================================
+
+resource "google_discovery_engine_data_store" "backstage" {
+  for_each          = local.datastores
+  project           = var.project_id
+  location          = var.region # 'global', 'us', or 'eu'
+  data_store_id     = "backstage-${each.key}"
+  display_name      = each.value.display_name
+  industry_vertical = "GENERIC"
+  solution_types    = ["SOLUTION_TYPE_SEARCH"]
+  content_config    = "NO_CONTENT" # Ingested in-memory via JSON payload
+}
+
+resource "google_discovery_engine_schema" "backstage_schema" {
+  for_each      = local.datastores
+  project       = var.project_id
+  location      = google_discovery_engine_data_store.backstage[each.key].location
+  data_store_id = google_discovery_engine_data_store.backstage[each.key].data_store_id
   schema_id     = "default_schema"
 
+  # Standardized schema template (maps core search & filterable catalog attributes)
   json_schema = jsonencode({
     "$schema" = "https://json-schema.org/draft/2020-12/schema"
     type      = "object"
@@ -687,16 +705,6 @@ resource "google_discovery_engine_schema" "techdocs_schema" {
   })
 }
 
-resource "google_discovery_engine_data_store" "catalog_datastore" {
-  location                    = var.region
-  data_store_id               = "catalog-datastore"
-  display_name                = "Backstage Catalog Data Store"
-  industry_vertical           = "GENERIC"
-  solution_types              = ["SOLUTION_TYPE_SEARCH"]
-  content_config              = "NO_CONTENT"
-  create_advanced_site_search = false
-}
-
 # ============================================================================
 # 2. GLOBAL BLENDED SEARCH APP
 # REQUIRED for Standalone Mode (Section 2) portal-wide homepage search.
@@ -704,14 +712,13 @@ resource "google_discovery_engine_data_store" "catalog_datastore" {
 # ============================================================================
 
 resource "google_discovery_engine_search_engine" "blended_search_engine" {
+  project        = var.project_id
   engine_id      = "backstage-global-search-app"
   collection_id  = "default_collection"
   location       = var.region
   display_name   = "Backstage Global Blended Search App"
-  data_store_ids = [
-    google_discovery_engine_data_store.techdocs_datastore.data_store_id,
-    google_discovery_engine_data_store.catalog_datastore.data_store_id,
-  ]
+  # Automatically resolves and links all dynamically provisioned Data Stores
+  data_store_ids = [for ds in google_discovery_engine_data_store.backstage : ds.data_store_id]
 
   search_engine_config {
     search_tier = "SEARCH_TIER_STANDARD"
@@ -720,16 +727,17 @@ resource "google_discovery_engine_search_engine" "blended_search_engine" {
 
 # ============================================================================
 # 3. DEDICATED SEARCH APP ENGINE (OPTIONAL)
-# Provision ONLY if custom query tuning, boost rules, or synonyms are needed
-# for a specific content type (falls back to querying Data Store if omitted).
+# Provision ONLY for datastores explicitly requesting create_dedicated_app = true.
 # ============================================================================
 
-resource "google_discovery_engine_search_engine" "techdocs_dedicated_engine" {
-  engine_id      = "techdocs-search-app"
+resource "google_discovery_engine_search_engine" "dedicated" {
+  for_each       = { for k, v in local.datastores : k => v if lookup(v, "create_dedicated_app", false) }
+  project        = var.project_id
+  engine_id      = "backstage-${each.key}-search"
   collection_id  = "default_collection"
-  location       = google_discovery_engine_data_store.techdocs_datastore.location
-  display_name   = "TechDocs Dedicated Search App Engine"
-  data_store_ids = [google_discovery_engine_data_store.techdocs_datastore.data_store_id]
+  location       = var.region
+  display_name   = "Backstage ${each.value.display_name} Dedicated App"
+  data_store_ids = [google_discovery_engine_data_store.backstage[each.key].data_store_id]
 
   search_engine_config {
     search_tier = "SEARCH_TIER_STANDARD"
