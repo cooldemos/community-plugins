@@ -295,5 +295,12 @@ The Typesense module supports two distinct operational modes depending on portal
 
 In Typesense, a **collection** is an indexed dataset container—analogous to a database table or search index—that enforces a structured schema across stored JSON documents. Typesense requires explicit schema definitions prior to document insertion. The module abstracts this requirement from Backstage collators by automating collection lifecycle management:
 
-- **Dynamic Collection Provisioning**: When Backstage collators stream indexable documents, the module automatically verifies target collections and provisions schema definitions mapped to standard Backstage document fields (`title`, `text`, `location`, `namespace`, `entityRef`, and custom metadata).
+- **Dynamic Collection Provisioning**: When Backstage collators stream indexable documents, the module automatically checks whether the target collection exists. Collection names are constructed using a deterministic prefix mapped to the document category (`backstage_<type>`, such as `backstage_software-catalog`). If missing, the collection is auto-provisioned with schema definitions mapped to standard Backstage document fields (`title`, `text`, `location`, `namespace`, `entityRef`, and custom metadata).
 - **Batch Ingestion Optimization**: Incoming document objects from scheduled collator streams are buffered in memory and written in batch payloads to optimize throughput and minimize HTTP overhead to the Typesense service.
+
+### Query Translation & Filter Transformation
+
+The module bridges Backstage's abstract search interface with Typesense's native REST API by translating query and document structures:
+
+- **Filter Expression Mapping**: Converts Backstage `SearchQuery` filter objects into Typesense boolean filter expressions (`filter_by`), mapping key-value predicates and array list filters (e.g., `kind:=Component && namespace:=default`) for precise category and metadata filtering.
+- **Deterministic Document IDs & Upsert Semantics**: During collator ingestion, documents without explicit IDs are assigned a deterministic ID derived by hex-encoding their location URI (`doc.location`). Documents are ingested using `upsert` semantics to update existing records in-place and prevent duplicate records across scheduled collator re-runs.
