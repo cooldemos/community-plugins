@@ -488,9 +488,9 @@ The module constructs deterministic document IDs by hashing normalized relative 
 
 ### Delta Synchronization & Cleanup
 
-Traditional search indexers operate as append-only processes, leaving deleted or renamed documentation pages in the search index as broken links.
+In standard Backstage deployments, pull-based collators execute scheduled bucket scans without historical state or change tracking. When documentation pages are deleted or renamed, collators append updated pages but leave removed entries in the search index as orphaned "ghost results" leading to 404 errors. Cleaning up stale records requires manually purging and re-indexing the entire backend.
 
-The GCS Eventarc module resolves this through delta synchronization:
+By leveraging GCS storage mutation events and object versioning, the Eventarc webhook eliminates manual index maintenance through automated delta synchronization:
 
 1. **Manifest Inspection**: When a new site manifest is published (Generation $N$), the background worker parses active pages and compiles the current document set.
 2. **Historical Version Fetching**: Using GCS object versioning, the worker retrieves the preceding manifest (Generation $N-1$) to build the historical document set.
