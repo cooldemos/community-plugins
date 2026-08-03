@@ -342,7 +342,9 @@ Authentication and request routing rely on Google Cloud Application Default Cred
 
 Document ingestion into Vertex AI Search Data Stores is configurable per document type via two operational indexing modes:
 
-- **Direct Ingestion Mode**: Backstage collators push document streams directly into the target Data Store using batch inline imports (up to 100 items per payload). Document location URIs are deterministically hashed to generate stable document IDs, enabling upsert operations during re-indexing runs. Direct ingestion is enforced for core catalog entities (`software-catalog`) to preserve catalog search synchronization.
+- **Direct Ingestion Mode**: Backstage collator streams push indexed documents directly from the Node.js backend to the target Vertex AI Search Data Store. The module buffers incoming documents in memory and flushes them in batch payloads (up to 100 items per request) using inline Discovery Engine imports, bypassing the need for intermediate Cloud Storage staging.
+
+  To ensure idempotent re-indexing, document location URIs are deterministically hashed into stable document IDs. This allows Vertex AI Search to perform upsert operations that overwrite outdated records across indexing runs without accumulating duplicate entries. Direct ingestion is enforced for software catalog entities (`software-catalog`) to keep catalog entity search synchronized in real time.
 
 - **Bypassed Ingestion Mode**: Local collator indexing is completely bypassed in favor of external, asynchronous pipelines (such as Cloud Storage uploads or automated event workflows) that populate the Data Store out-of-band. This eliminates memory and CPU overhead on the Backstage backend when indexing large documentation suites.
 
