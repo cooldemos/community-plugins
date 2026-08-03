@@ -502,7 +502,7 @@ By leveraging GCS storage mutation events and object versioning, the Eventarc we
 The GCS Eventarc module supports two security models, determined by whether Eventarc delivers notifications to a public Cloud Run endpoint or a private GKE cluster destination. By default, OIDC authentication is disabled (`enabled: false`).
 
 - **Cloud Run Destinations (OIDC Authorization)**: When targeting Cloud Run, operators should enable OIDC verification (`enabled: true`). Eventarc automatically generates and attaches a signed Google OIDC ID token in the `Authorization: Bearer` request header. The webhook validates the token's cryptographic signature, issuer (`https://accounts.google.com`), target audience, and configured service account email.
-- **GKE Destinations (Network Layer Isolation)**: When targeting GKE services, Eventarc routes events through an internal, cluster-local `gke-forwarder` pod over private VPC lines. Because the forwarder pod does not attach OIDC tokens, OIDC authentication must remain disabled (`enabled: false`).
+- **GKE Destinations (Network Layer Isolation)**: When targeting GKE services, GCP Eventarc strictly routes HTTP traffic to port 80 over private VPC lines (delivering via an internal `gke-forwarder` pod). Because the forwarder pod does not attach OIDC tokens, OIDC authentication must remain disabled (`enabled: false`), and the Backstage Kubernetes `Service` must expose port 80 (mapped to container port `7007`).
 
 When OIDC authentication is disabled for GKE deployments, security should be enforced at the network ingress layer to prevent unauthorized external access to `/api/events/gcs`. Operators can implement one or more of the following options:
 
