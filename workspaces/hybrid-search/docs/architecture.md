@@ -482,14 +482,9 @@ When processing an incoming manifest, the background worker queries the Backstag
 
 ### Deterministic Path Hashing
 
-To execute upsert operations and targeted deletions, search engines require stable, deterministic document identifiers. The module constructs stable document IDs by computing MD5 hashes over canonicalized document URIs:
+Search engines require stable document identifiers to execute idempotent updates and targeted deletions across documentation builds.
 
-$$\text{canonicalPath} = \text{`/docs/\${namespace.toLowerCase()}/\${kind.toLowerCase()}/\${name.toLowerCase()}/\${cleanLocation}`}$$
-
-$$\text{docId} = \text{md5}(\text{canonicalPath})$$
-
-- **Path Canonicalization**: Entity identifiers (`namespace`, `kind`, `name`) are explicitly lowercased, leading/trailing slashes are trimmed, and redundant filename suffixes (such as `index.html`) are stripped.
-- **Idempotency Guarantee**: Re-indexing the same documentation page across multiple CI/CD deployments produces identical 32-character hexadecimal MD5 digests, allowing search engines to update existing entries without creating duplicate records.
+The module constructs stable document IDs by computing MD5 hashes over canonicalized relative paths (`/docs/<namespace>/<kind>/<name>/<location>`). Canonicalization normalizes string casing, trims slashes, and strips redundant file extensions such as `index.html`. This guarantees that successive documentation updates produce identical document identifiers, allowing search engines to update existing entries cleanly without creating duplicate records.
 
 ### Differential Reconciliation
 
