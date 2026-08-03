@@ -156,7 +156,7 @@ While standard Backstage search provides a simple baseline for small portal inst
 - **`@backstage-community/plugin-search-backend-module-hybrid`**: Top-level federated query router and extension point registry. Intercepts search requests, routes queries to mapped sub-engines based on document type, manages parallel fan-out, and normalizes result scores across heterogeneous engines.
 - **`@backstage-community/plugin-search-backend-module-typesense`**: Search engine module backed by Typesense.
 - **`@backstage-community/plugin-search-backend-module-vertexai`**: Search engine module backed by Google Vertex AI Search.
-- **`@backstage-community/plugin-events-backend-module-gcs-eventarc`**: Event-driven asynchronous ingestion webhook module (`/api/events/gcs`) used exclusively with Vertex AI Search.
+- **`@backstage-community/plugin-events-backend-module-gcs-eventarc`**: Event-driven asynchronous ingestion webhook module (`/api/events/gcs`) used exclusively with the Vertex AI Search backend search module.
 
 ## Section 2: Federated Multi-Engine Search Routing
 
