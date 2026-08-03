@@ -488,17 +488,14 @@ The module constructs deterministic document IDs by hashing normalized relative 
 
 ### Differential Reconciliation
 
-Standard pull indexers process data strictly as append/overwrite operations, leaving deleted or renamed documentation pages in search indices as orphaned "ghost results" that cause 404 links.
+Traditional search indexers operate as append-only processes, leaving deleted or renamed documentation pages in the search index as broken links.
 
-The GCS Eventarc module resolves this through **Differential Reconciliation**:
+The GCS Eventarc module resolves this through differential reconciliation:
 
-1. **Active Set Construction**: The worker parses the current `search_index.json` manifest (GCS Generation $N$), enriches active pages, and builds the active document ID set:
-   $$Set_{\text{current}} = \{\text{docId}(p) \mid p \in D_{\text{current}}\}$$
-2. **Historical Set Fetching**: The worker queries GCS object versioning history to download the preceding `search_index.json` manifest (GCS Generation $N-1$) and builds the historical document ID set:
-   $$Set_{\text{previous}} = \{\text{docId}(p) \mid p \in D_{\text{previous}}\}$$
-3. **Delta Set Subtraction**: The worker performs set subtraction to identify pages that existed in Generation $N-1$ but were removed in Generation $N$:
-   $$Set_{\text{deleted}} = Set_{\text{previous}} \setminus Set_{\text{current}}$$
-4. **Active Upsert & Throttled Purge**: Active documents ($Set_{\text{current}}$) are batch-ingested into Vertex AI Search in concurrent import requests (`batchSize: 100`). Deleted documents ($Set_{\text{deleted}}$) are issued to the search engine as explicit deletion requests regulated by a concurrency throttle (`maxConcurrency: 5`) to prevent rate limit exhaustion.
+1. **Manifest Inspection**: When a new site manifest is published (Generation $N$), the background worker parses active pages and compiles the current document set.
+2. **Historical Version Fetching**: Using GCS object versioning, the worker retrieves the preceding manifest (Generation $N-1$) to build the historical document set.
+3. **Delta Calculation**: By subtracting the active document set from the historical set, the worker identifies deleted or moved pages ($D_{\text{deleted}} = D_{\text{previous}} \setminus D_{\text{current}}$).
+4. **Synchronized Ingestion & Purging**: Active pages are batch-ingested into the search backend, while deleted pages are explicitly removed using throttled deletion requests to avoid API rate limits.
 
 ### Operational Modes & Security Models
 
