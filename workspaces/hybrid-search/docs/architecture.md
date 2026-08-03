@@ -418,12 +418,14 @@ Vertex AI Search evaluates queries dynamically and returns content at multiple l
 
 ### Architecture
 
-The GCS Eventarc ingestion module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) provides an event-driven webhook ingress that decouples technical documentation processing from the Backstage application server.
+The GCS Eventarc ingestion module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) provides an event-driven webhook ingress that decouples technical documentation search indexing from the Backstage application server.
 
-Standard Backstage TechDocs ingestion compiles static markdown sites and executes search indexing directly within the Node.js backend process memory, causing V8 heap expansion, garbage collection freezes, and event loop latency during large documentation builds. The GCS Eventarc module resolves these bottlenecks by introducing **Decoupled Asynchronous Ingestion**:
+Standard Backstage TechDocs supports offloading site compilation (`techdocs-cli` / MkDocs) to CI/CD pipelines, publishing static HTML and `search_index.json` manifests directly to Google Cloud Storage (GCS). However, standard search indexing still relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically download and parse these manifests inside Node.js V8 heap memory.
 
-- **Offloaded Site Compilation**: Documentation builds (`techdocs-cli` / MkDocs) are executed in external CI/CD pipelines (e.g., GitHub Actions or Google Cloud Build), which compile markdown to static HTML and publish the site manifest (`search_index.json`) directly to a Google Cloud Storage (GCS) bucket.
-- **Event-Driven Asynchronous Synchronization**: Instead of periodic polling streams inside Node.js runtime memory, GCS storage creation events trigger lightweight webhooks via Google Cloud Eventarc to execute index synchronization out-of-band.
+The GCS Eventarc module builds upon external TechDocs publishing by introducing **Decoupled Asynchronous Indexing**:
+
+- **Offloaded Search Indexing**: Rather than executing polling collators inside the Backstage application server process, search index synchronization is offloaded entirely to out-of-band event processing.
+- **Event-Driven Push Synchronization**: Whenever a CI/CD pipeline publishes an updated `search_index.json` to GCS, a Google Cloud Eventarc trigger fires a lightweight HTTP POST to the `/api/events/gcs` webhook, executing index synchronization asynchronously without V8 heap contention or event loop blocking.
 
 ### Webhook Ingress & Execution Flow
 
