@@ -160,19 +160,16 @@ The Hybrid Search Workspace is architected as four modular, backend packages des
 - **`@backstage-community/plugin-search-backend-module-vertexai`**: Search engine module backed by Google Cloud Vertex AI Search, a managed enterprise search service providing semantic vector retrieval, natural language understanding, and LLM-powered extractive answers.
 - **`@backstage-community/plugin-events-backend-module-gcs-eventarc`**: Event-driven asynchronous ingestion webhook module (`/api/events/gcs`) used exclusively with the Vertex AI Search backend search module.
 
-### Extension Points & Custom Sub-Engine Registration
+### Extension Points & Custom Engine Registration
 
-In Backstage's New Backend System (`@backstage/backend-plugin-api`), **Extension Points** are strongly typed interface contracts created via `createExtensionPoint`. They allow feature plugins to expose registration mechanisms so that external backend modules can register handlers, drivers, or sub-services during application initialization prior to backend startup.
+In Backstage's New Backend System, **Extension Points** serve as pluggable architectural boundaries that allow backend plugins to accept dynamic contributions from independent modules during server initialization.
 
-Standard Backstage core exposes `searchEngineRegistryExtensionPoint`, which enforces a strict single-engine policy allowing only one primary `SearchEngine` to register for the entire portal. The hybrid search module (`plugin-search-backend-module-hybrid`) registers `HybridSearchEngine` into this core extension point as the sole primary engine.
+Standard Backstage search uses a single-engine extension point (`searchEngineRegistryExtensionPoint`) that allows only one search engine to register for the entire portal. To bypass this limitation without modifying Backstage core, the hybrid search module (`plugin-search-backend-module-hybrid`) registers itself as the primary engine, while exposing a custom extension point (`hybridSearchEngineRegistryExtensionPoint`) to host downstream search backends.
 
-To allow multiple search engines to co-exist, the hybrid search module exposes its own custom extension point: `hybridSearchEngineRegistryExtensionPoint`.
+This extension point pattern enables a flexible, open-ended search architecture:
 
-#### Registration Mechanics for Custom Sub-Engines:
-
-- **Custom Extension Point Interface**: `hybridSearchEngineRegistryExtensionPoint` exposes a `registerEngine(engine: SearchEngine)` method that sub-engine modules invoke during their initialization phase (`init`).
-- **Dynamic Sub-Engine Discovery**: When a sub-engine module (such as Typesense or Vertex AI Search) initializes, it receives `hybridSearchEngineRegistryExtensionPoint` as a dependency and registers its `SearchEngine` implementation.
-- **Support for Third-Party Engines**: Developers building custom or proprietary search integrations (such as Elasticsearch, Solr, or OpenSearch) can register custom sub-engines without modifying core hybrid router code by creating a new backend module that targets `hybridSearchEngineRegistryExtensionPoint`.
+- **Dynamic Engine Discovery**: Domain-specific search modules (such as Typesense or Vertex AI Search) register automatically with the hybrid router at startup without hardcoded dependencies between packages.
+- **Pluggable Sub-Engine Ecosystem**: Platform teams can integrate custom or third-party search engines (such as Elasticsearch or OpenSearch) by creating lightweight backend modules that register against the hybrid extension point.
 
 ## Section 2: Hybrid Search Router Mechanics
 
