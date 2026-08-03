@@ -153,6 +153,8 @@ While standard Backstage search provides a simple baseline for small portal inst
 
 ## Section 1: Backend Modules Architecture
 
+The Hybrid Search Workspace is architected as four modular, loosely coupled backend packages designed for Backstage's New Backend System (`@backstage/backend-plugin-api`). Each package encapsulates a distinct architectural responsibility within the query routing and document ingestion ecosystem:
+
 - **`@backstage-community/plugin-search-backend-module-hybrid`**: Top-level federated query router and extension point registry. Intercepts search requests, routes queries to mapped sub-engines based on document type, manages parallel fan-out, and normalizes result scores across heterogeneous engines.
 - **`@backstage-community/plugin-search-backend-module-typesense`**: Search engine module backed by Typesense.
 - **`@backstage-community/plugin-search-backend-module-vertexai`**: Search engine module backed by Google Vertex AI Search.
