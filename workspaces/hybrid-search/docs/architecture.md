@@ -168,10 +168,7 @@ In Backstage's New Backend System, **Extension Points** serve as pluggable archi
 
 Standard Backstage search uses a single-engine extension point (`searchEngineRegistryExtensionPoint`) that allows only one search engine to register for the entire portal. To bypass this limitation without modifying Backstage core, the hybrid search module (`plugin-search-backend-module-hybrid`) registers itself as the primary engine, while exposing a custom extension point (`hybridSearchEngineRegistryExtensionPoint`) to host downstream search backends.
 
-This extension point pattern enables a flexible, open-ended search architecture:
-
-- **Dynamic Engine Discovery**: Search engine modules (such as Typesense or Vertex AI Search) register automatically with the hybrid router at startup without hardcoded dependencies between packages.
-- **Pluggable Sub-Engine Ecosystem**: Platform teams can integrate custom or third-party search engines by creating lightweight backend modules that register against the hybrid extension point.
+At backend startup, modules like Typesense and Vertex AI Search register themselves with the hybrid engine through this extension point without hardcoded package coupling. Additional search backends can be added similarly by implementing a backend module that registers with the extension point.
 
 ### Query Routing & Dispatch
 
