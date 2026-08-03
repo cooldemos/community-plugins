@@ -162,7 +162,7 @@ The Hybrid Search Workspace is architected as four modular, backend packages des
 
 ## Section 2: Hybrid Search Router Mechanics
 
-### Categorical Routing & Query Dispatch
+### Query Routing & Dispatch
 
 The core architectural solution to the limitations of standard Backstage search is **Federated Multi-Engine Routing**. Rather than forcing all portal document categories into a single, uniform search engine, the Hybrid Search Architecture introduces a dynamic query orchestrator (`HybridSearchEngine`) that intercepts incoming search requests, evaluates document category filters, dispatches queries to domain-specialized sub-engines, and consolidates the results into a unified response.
 
