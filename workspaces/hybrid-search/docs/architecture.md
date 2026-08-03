@@ -295,7 +295,7 @@ The Typesense module supports two distinct operational modes depending on portal
 
 Authentication between the search module and the external Typesense service is secured using API key credentials (`apiKey`). The module passes this key during client initialization to authenticate all collection management, document indexing streams, and search query API calls.
 
-### Cluster Connectivity & High Availability
+### Cluster Topology & Resilience
 
 Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path for a cluster instance. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable during operation.
 
