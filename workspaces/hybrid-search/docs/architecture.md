@@ -342,9 +342,9 @@ Authentication and request routing rely on Google Cloud Application Default Cred
 
 Document ingestion into Vertex AI Search Data Stores is configurable per document type via two operational indexing modes:
 
-- **Direct Ingestion Mode (`indexing.enabled: true`)**: Backstage collators stream index documents directly to the target Data Store. The module returns a custom `VertexAIWritableStream` that flushes buffered document payloads in bulk batches (up to 100 items with optional throttling delays) directly via Discovery Engine inline imports. Location URIs are SHA-256 hashed to derive deterministic document IDs for upserts across re-indexing runs. Direct indexing is mandatory for core software catalog entities (`software-catalog`) to maintain catalog search integrity.
+- **Direct Ingestion Mode**: Backstage collators push document streams directly into the target Data Store using batch inline imports (up to 100 items per payload). Document location URIs are deterministically hashed to generate stable document IDs, enabling upsert operations during re-indexing runs. Direct ingestion is enforced for core catalog entities (`software-catalog`) to preserve catalog search synchronization.
 
-- **Bypassed Ingestion Mode (`indexing.enabled: false`)**: Local collator indexing in Backstage is completely bypassed by returning a dummy no-op stream. Ingestion is offloaded to external, asynchronous pipelines (such as GCS file uploads, EventArc automation, or scheduled batch jobs) that populate the GCP Data Store directly out-of-band. This mode prevents high CPU and memory resource consumption on the Backstage Node.js instance when processing large documentation suites.
+- **Bypassed Ingestion Mode**: Local collator indexing is completely bypassed in favor of external, asynchronous pipelines (such as Cloud Storage uploads or automated event workflows) that populate the Data Store out-of-band. This eliminates memory and CPU overhead on the Backstage backend when indexing large documentation suites.
 
 ### Query Translation & Blended Search
 
