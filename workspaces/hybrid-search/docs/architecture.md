@@ -293,14 +293,15 @@ The Typesense module supports two distinct operational modes depending on portal
 
 ### Schema & Indexing Mechanics
 
-In Typesense, a **collection** is an indexed dataset container—analogous to a database table or search index—that enforces a structured schema across stored JSON documents. Typesense requires explicit schema definitions prior to document insertion. The module abstracts this requirement from Backstage collators by automating collection lifecycle management:
+Typesense organizes documents into collections, which require a defined schema before documents can be inserted. The Typesense search module manages collection setup automatically as Backstage collators run.
 
-- **Dynamic Collection Provisioning**: When Backstage collators stream indexable documents, the module automatically checks whether the target collection exists. Collection names are constructed using a deterministic prefix mapped to the document category (`backstage_<type>`, such as `backstage_software-catalog`). If missing, the collection is auto-provisioned with schema definitions mapped to standard Backstage document fields (`title`, `text`, `location`, `namespace`, `entityRef`, and custom metadata).
-- **Batch Ingestion Optimization**: Incoming document objects from scheduled collator streams are buffered in memory and written in batch payloads to optimize throughput and minimize HTTP overhead to the Typesense service.
+Collection names follow a `backstage_<type>` naming convention (such as `backstage_software-catalog`). When indexing starts, if a target collection does not exist, the module creates it automatically with a schema mapped to standard Backstage document fields (`title`, `text`, `location`, `namespace`, `entityRef`, and custom metadata).
 
-### Query Translation & Filter Transformation
+To optimize indexing throughput, the module buffers incoming documents from collator streams in memory and writes them to Typesense in batch payloads of 100 items.
 
-The module bridges Backstage's abstract search interface with Typesense's native API by translating query and document structures:
+### Query Translation & Filtering
 
-- **Filter Expression Mapping**: Converts Backstage search filter objects into Typesense boolean filter expressions, mapping key-value predicates and list filters for precise metadata filtering.
-- **Deterministic Document IDs & Upsert Semantics**: During collator ingestion, documents lacking explicit IDs are assigned a deterministic identifier derived from their location URI. Documents are ingested using upsert semantics to update existing records in-place and prevent duplicates across re-indexing runs.
+The module converts Backstage search queries into native Typesense API requests:
+
+- **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for category and metadata queries.
+- **Document Identification**: Derives a stable document ID from a document's location URI when an explicit ID is missing, using `upsert` mode during ingestion to overwrite existing records and prevent duplicates across re-indexing runs.
