@@ -484,7 +484,7 @@ When processing an incoming manifest, the background worker queries the Backstag
 
 Search engines require stable document identifiers to execute idempotent updates and targeted deletions across documentation builds.
 
-The module generates stable document IDs by hashing canonicalized relative paths. Normalizing path casing, slashes, and redundant file extensions guarantees that successive updates produce identical IDs, enabling search backends to update existing entries cleanly without creating duplicate records.
+By hashing normalized document paths, the module guarantees that successive builds produce identical document IDs. This allows search backends to update existing records in-place without creating duplicate entries.
 
 ### Differential Reconciliation
 
