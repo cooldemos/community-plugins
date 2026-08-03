@@ -293,7 +293,7 @@ The Typesense module supports two distinct operational modes depending on portal
 
 ### Schema & Indexing Mechanics
 
-Typesense requires defined schemas for document collections prior to ingestion. The module abstracts this requirement from Backstage collators by automating collection lifecycle management:
+In Typesense, a **collection** is an indexed dataset container—analogous to a database table or search index—that enforces a structured schema across stored JSON documents. Typesense requires explicit schema definitions prior to document insertion. The module abstracts this requirement from Backstage collators by automating collection lifecycle management:
 
 - **Dynamic Collection Provisioning**: When Backstage collators stream indexable documents, the module automatically verifies target collections and provisions schema definitions mapped to standard Backstage document fields (`title`, `text`, `location`, `namespace`, `entityRef`, and custom metadata).
 - **Batch Ingestion Optimization**: Incoming document objects from scheduled collator streams are buffered in memory and written in batch payloads to optimize throughput and minimize HTTP overhead to the Typesense service.
