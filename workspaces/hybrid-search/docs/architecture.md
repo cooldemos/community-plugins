@@ -432,30 +432,31 @@ The Eventarc module shifts index synchronization from scheduled polling to event
 The module exposes a dedicated HTTP webhook endpoint mounted on the Backstage events router at `/api/events/gcs`:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                           Decoupled Eventarc Ingestion Sequence                             │
-├─────────────────────────────────────────────────────────────────────────────────────────────┤
-│                                                                                             │
-│  CI/CD Pipeline ──► Upload search_index.json ──► GCS TechDocs Bucket                        │
-│                                                        │                                    │
-│                                                        ▼ (google.cloud.storage.object.v1.finalized)
-│                                                Google Eventarc Trigger                      │
-│                                                        │                                    │
-│                                                        ▼                                    │
-│                                            Private GKE / Cloud Run Webhook                  │
-│                                            (HTTP POST /api/events/gcs)                      │
-│                                                        │                                    │
-│                                                        ▼ (Acknowledge HTTP 200 OK)          │
-│                                            Internal Backstage Event Bus                     │
-│                                                        │                                    │
-│                                                        ▼ (Asynchronous Background Worker)   │
-│                                            1. Download search_index.json (Gen N)            │
-│                                            2. Enrich Docs via CatalogService                │
-│                                            3. Compute Stable MD5 Document IDs               │
-│                                            4. Calculate Delta vs Historical Gen N-1         │
-│                                            5. Upsert Active & Purge Stale Documents         │
-│                                                                                             │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│                           Decoupled Eventarc Ingestion Sequence                           │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                           │
+│  CI/CD Pipeline ──► Upload search_index.json ──► GCS TechDocs Bucket                      │
+│                                                        │                                  │
+│                                                        ▼                                  │
+│                                     Google Eventarc Trigger                               │
+│                                  (object.v1.finalized event)                              │
+│                                                        │                                  │
+│                                                        ▼                                  │
+│                                 Private GKE / Cloud Run Webhook                           │
+│                                   (HTTP POST /api/events/gcs)                             │
+│                                                        │                                  │
+│                                                        ▼ (Acknowledge HTTP 200 OK)        │
+│                                   Internal Backstage Event Bus                            │
+│                                                        │                                  │
+│                                                        ▼ (Asynchronous Background Worker) │
+│                                  1. Download search_index.json (Gen N)                    │
+│                                  2. Enrich Docs via CatalogService                        │
+│                                  3. Compute Stable MD5 Document IDs                       │
+│                                  4. Calculate Delta vs Historical Gen N-1                 │
+│                                  5. Upsert Active & Purge Stale Documents                 │
+│                                                                                           │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 1. **Storage Event Emission**: When a CI/CD pipeline uploads `search_index.json` to GCS, Cloud Storage emits a `google.cloud.storage.object.v1.finalized` event containing the target bucket name, object path, and generation ID ($N$).
