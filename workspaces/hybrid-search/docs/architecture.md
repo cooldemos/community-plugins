@@ -793,11 +793,19 @@ search:
             projectId: my-gcp-project-id
             engineId: techdocs-search-app
             location: global
+
+        software-catalog:
+          indexing:
+            enabled: true
+          datastore:
+            projectId: my-gcp-project-id
+            datastoreId: catalog-datastore
+            location: global
 ```
 
 ### Option B – Decoupled Eventarc Ingestion & Cleanup Sweeper Mode (`indexing.enabled: false`)
 
-To prevent Node.js V8 memory strain during documentation builds, local collator indexing is completely bypassed by setting `indexing.enabled: false`. Ingestion is offloaded to CI/CD pipelines publishing to Google Cloud Storage (GCS), triggering real-time index updates via Eventarc notifications while maintaining index consistency via the background `techdocs-orphan-sweeper` task.
+To prevent Node.js V8 memory strain during documentation builds, local collator indexing is completely bypassed for TechDocs by setting `indexing.enabled: false`. Ingestion is offloaded to CI/CD pipelines publishing to Google Cloud Storage (GCS), triggering real-time index updates via Eventarc notifications while maintaining index consistency via the background `techdocs-orphan-sweeper` task.
 
 #### 1. Backend Module Registration
 
@@ -826,16 +834,22 @@ backend.start();
 
 #### 2. Application Configuration
 
-Configure offloaded ingestion and catalog orphan cleanup in `app-config.yaml`:
+Configure offloaded TechDocs ingestion and catalog orphan cleanup in `app-config.yaml`:
 
 ```yaml
 search:
   engines:
     vertexai:
+      # MANDATORY for Standalone Mode: Global Blended Search App for portal-wide queries
+      blendedSearch:
+        projectId: my-gcp-project-id
+        location: global
+        engineId: backstage-global-search-app
+
       types:
         techdocs:
           indexing:
-            enabled: false # Bypasses local collator streaming
+            enabled: false # Bypasses local collator streaming for TechDocs
           datastore:
             projectId: my-gcp-project-id
             datastoreId: techdocs-datastore
@@ -845,6 +859,15 @@ search:
             projectId: my-gcp-project-id
             engineId: techdocs-search-app
             location: global
+
+        software-catalog:
+          indexing:
+            enabled: true # Catalog collator streams directly
+          datastore:
+            projectId: my-gcp-project-id
+            datastoreId: catalog-datastore
+            location: global
+
       cleanup:
         enabled: true
         frequency: { hours: 2 }
