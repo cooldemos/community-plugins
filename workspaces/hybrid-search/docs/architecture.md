@@ -306,8 +306,10 @@ The module converts Backstage search queries into native Typesense API requests:
 - **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for category and metadata queries.
 - **Document Identification**: Derives a stable document ID from a document's location URI when an explicit ID is missing, using `upsert` mode during ingestion to overwrite existing records and prevent duplicates across re-indexing runs.
 
-### Authentication & Cluster Connectivity
+### Authentication Mechanics
 
-Authentication between the search module and the Typesense service is secured via API key authentication (`apiKey`).
+Authentication between the search module and the external Typesense service is secured using API key credentials (`apiKey`). The module passes this key during client initialization to authenticate all collection management, document indexing streams, and search query API calls.
 
-To support high-availability production deployments, connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across Typesense cluster nodes if a node becomes unavailable during indexing or search requests.
+### Cluster Connectivity & High Availability
+
+Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path for a cluster instance. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable during operation.
