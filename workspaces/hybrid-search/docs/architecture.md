@@ -274,3 +274,26 @@ Pagination mechanics in the hybrid architecture depend on whether a query target
 - **Single-Engine Queries**: Triggered when a query specifies a single category in the query string (e.g., `types[]=software-catalog`). The router forwards pagination parameters (`pageCursor`, `pageLimit`) directly to the mapped search engine, returning its native pagination token (`pageCursor`) for full multi-page navigation.
 
 - **Multi-Engine Queries**: Triggered when a query specifies multiple categories (e.g., `types[]=software-catalog&types[]=techdocs`) or omits `types` parameters entirely from the query string (global portal search). Because pagination tokens across heterogeneous engines cannot be aligned once results are merged or score-normalized, the router slices the consolidated result set to `pageLimit` and explicitly sets `pageCursor` to `undefined`. This delivers top-relevance blended results on Page 1 while delegating deep pagination to single-category scoped views.
+
+## Section 3: Typesense Search Module Architecture
+
+### Architectural Purpose & Design Principles
+
+The Typesense search backend module (`@backstage-community/plugin-search-backend-module-typesense`) is engineered as an open-source, high-performance search backend for Backstage. Built on Typesense's in-memory engine, it delivers sub-millisecond keyword matching, typo tolerance, structured metadata filtering, and native vector search capabilities.
+
+The module is designed to eliminate the scaling and heap memory limitations of Backstage's default Lunr in-memory engine while avoiding the heavy infrastructure footprint and operational complexity of hosting Elasticsearch clusters.
+
+### Operational Modes: Standalone vs. Hybrid Integration
+
+To support diverse deployment requirements, the Typesense module is architected with dual-mode registration capabilities:
+
+- **Standalone Mode (Primary Search Engine)**: The module registers directly with Backstage's core search plugin (`searchEngineRegistryExtensionPoint`) as the sole primary search engine for the entire developer portal. In this standalone configuration, all document indexing streams and query executions across all portal document categories flow directly through Typesense.
+
+- **Hybrid Sub-Engine Mode (Router Integration)**: The module registers with the hybrid orchestrator (`hybridSearchEngineRegistryExtensionPoint`) as a specialized sub-engine. In this mode, Typesense handles designated document categories (such as fast catalog entity lookup and structured metadata filtering) while operating alongside complementary search backends like Vertex AI Search.
+
+### Schema & Indexing Mechanics
+
+Typesense requires defined schemas for document collections prior to ingestion. The module abstracts this requirement from Backstage collators by automating collection lifecycle management:
+
+- **Dynamic Collection Provisioning**: When Backstage collators stream indexable documents, the module automatically verifies target collections and provisions schema definitions mapped to standard Backstage document fields (`title`, `text`, `location`, `namespace`, `entityRef`, and custom metadata).
+- **Batch Ingestion Optimization**: Incoming document objects from scheduled collator streams are buffered in memory and written in batch payloads to optimize throughput and minimize HTTP overhead to the Typesense service.
