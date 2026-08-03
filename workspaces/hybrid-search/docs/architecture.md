@@ -313,3 +313,7 @@ Authentication between the search module and the external Typesense service is s
 ### Cluster Connectivity & High Availability
 
 Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path for a cluster instance. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable during operation.
+
+### Partitioning Strategy for Distributed Deployments
+
+To ensure high performance and availability in large-scale deployments, the Typesense module supports a per-category partitioning strategy. The `partitionGroups` configuration allows administrators to divide the total number of partitions by the number of categories that will index into Typesense, enabling horizontal scaling across multiple partitions.
