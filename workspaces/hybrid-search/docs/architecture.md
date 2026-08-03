@@ -424,7 +424,7 @@ In standard Backstage deployments, TechDocs supports external site compilationâ€
 
 The Eventarc module shifts index synchronization from scheduled polling to event-driven push processing:
 
-- External compilation is a strict prerequisite. The pipeline relies on `google.cloud.storage.object.v1.finalized` events emitted by GCS when a new `search_index.json` object is written. Local, in-process documentation builds write directly to container disk, bypassing GCS and preventing Eventarc triggers from firing.
+- External compilation is a strict prerequisite. The pipeline relies on `google.cloud.storage.object.v1.finalized` events emitted by GCS when a `search_index.json` object is created or updated. Local, in-process documentation builds write directly to container disk, bypassing GCS and preventing Eventarc triggers from firing.
 - Indexing is triggered instantly when documentation is published. When Cloud Storage receives an updated site manifest from CI/CD, Eventarc delivers a webhook payload to `/api/events/gcs`, initiating index synchronization out-of-band without blocking the application server or running recurring background polling loops.
 
 ### Webhook Ingress & Execution Flow
