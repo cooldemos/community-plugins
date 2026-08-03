@@ -16,11 +16,10 @@ The **Hybrid Search Workspace** resolves these issues by introducing:
 - Search backend modules for Typesense and Vertex AI Search that power semantic search and run standalone or combined in hybrid mode.
 - An offloaded indexing pattern (implemented for Vertex AI Search) that shifts search indexing out of the application server process.
 
-This document is written for engineers configuring search in Backstage. It explains how to use the solutions provided in this workspace, while providing context on how default Backstage search works and why this workspace was created. The guide is organized into three parts:
+This document is written for engineers configuring search in Backstage. It explains how to use the solutions provided in this workspace, while providing context on how default Backstage search works and why this workspace was created. The guide is organized into two parts:
 
-- **Part 1: Standard Backstage Search Mechanics & Limitations** analyzes core Backstage search abstractions, query lifecycles, and structural bottlenecks.
+- **Part 1: Backstage Search Architecture** analyzes core Backstage search abstractions, query lifecycles, and structural bottlenecks.
 - **Part 2: Workspace Architecture & Backend Module Design** details the federated search router, engine modules, and offloaded event-driven indexing architecture.
-- **Part 3: Deployment & Operations Manual** guides platform engineers through configuring, deploying, and operating these modules in production.
 
 ## Document Overview & Structural Map
 
@@ -28,15 +27,24 @@ This document is written for engineers configuring search in Backstage. It expla
 ┌───────────────────────────────────────────────────────────────────────────────────┐
 │                   Architecture Document Structure & Navigation                    │
 ├───────────────────────────────────────────────────────────────────────────────────┤
-│  Part 1: Standard Backstage Search Mechanics & Limitations                        │
+│  Part 1: Backstage Search Architecture                                            │
+│    ├── Section 1: Core Abstractions & Extension Points                            │
+│    ├── Section 2: Query Dispatch                                                  │
+│    ├── Section 3: Document Ingestion                                              │
+│    └── Section 4: Architectural Constraints                                       │
+│                                                                                   │
 │  Part 2: Workspace Architecture & Backend Module Design                           │
-│  Part 3: Deployment & Operations Manual                                           │
+│    ├── Section 1: Backend Modules Architecture                                    │
+│    ├── Section 2: Hybrid Search Router                                            │
+│    ├── Section 3: Typesense Search Module Architecture                            │
+│    ├── Section 4: Vertex AI Search Backend Module Architecture                    │
+│    └── Section 5: GCS Eventarc Ingestion Webhook Architecture                     │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-# Part 1: How Backstage Search Works (Conceptual & Architectural Analysis)
+# Part 1: Backstage Search Architecture
 
-## Section 1: Core Architecture & Extension Points
+## Section 1: Core Abstractions & Extension Points
 
 To examine how standard Backstage search operates under the hood, it helps to first analyze its component model. Backstage organizes search through a central search backend plugin (`@backstage/plugin-search-backend`) and a shared node library (`@backstage/plugin-search-backend-node`), decomposing document discovery into five core abstractions:
 
@@ -70,7 +78,7 @@ Together, these abstractions form the foundation of standard Backstage search—
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Section 2: Query Execution Mechanics
+## Section 2: Query Dispatch
 
 When a developer enters a search query into the Backstage portal user interface, the request executes through an HTTP request-response flow managed by the search backend plugin:
 
@@ -110,7 +118,7 @@ When a developer enters a search query into the Backstage portal user interface,
 - **Step 5 – Response Normalization**: The raw search response—containing matching documents, relevance scores, and snippet highlights—is mapped into Backstage's standardized `SearchResult` payload structure.
 - **Step 6 – HTTP Response**: The search backend returns a JSON payload to the client containing the normalized search results, total result count, and pagination cursors.
 
-## Section 3: Document Ingestion Mechanics
+## Section 3: Document Ingestion
 
 Standard Backstage manages document ingestion through an in-process, stream-based pull pipeline. Operating directly within the primary Node.js backend process, this pipeline periodically collects content from portal sources and indexes it into the active search engine.
 
@@ -160,9 +168,9 @@ The Hybrid Search Workspace is architected as four modular, backend packages des
 - **`@backstage-community/plugin-search-backend-module-vertexai`**: Search engine module backed by Google Cloud Vertex AI Search, a managed enterprise search service providing semantic vector retrieval, natural language understanding, and LLM-powered extractive answers.
 - **`@backstage-community/plugin-events-backend-module-gcs-eventarc`**: Event-driven asynchronous ingestion webhook module (`/api/events/gcs`) used exclusively with the Vertex AI Search backend search module.
 
-## Section 2: Hybrid Search Router Mechanics
+## Section 2: Hybrid Search Router
 
-### Extension Points & Custom Engine Registration
+### Sub-engine Registration
 
 In Backstage's New Backend System, **Extension Points** serve as pluggable architectural boundaries that allow backend plugins to accept dynamic contributions from independent modules during server initialization.
 
@@ -170,7 +178,7 @@ Standard Backstage search uses a single-engine extension point (`searchEngineReg
 
 At backend startup, modules like Typesense and Vertex AI Search register themselves with the hybrid engine through this extension point without hardcoded package coupling. Additional search backends can be added similarly by implementing a backend module that registers with the extension point.
 
-### Query Routing & Dispatch
+### Query Dispatch
 
 The core architectural solution to the limitations of standard Backstage search is **Federated Multi-Engine Routing**. Rather than forcing all portal document categories into a single, uniform search engine, the Hybrid Search Architecture introduces a dynamic query orchestrator (`HybridSearchEngine`) that intercepts incoming search requests, evaluates document category filters, dispatches queries to domain-specialized sub-engines, and consolidates the results into a unified response.
 
@@ -181,54 +189,50 @@ If a search query requests an unmapped document category, the router checks for 
 The following sequence illustrates how the `HybridSearchEngine` intercepts incoming HTTP queries, evaluates request parameters against the routing matrix, executes parallel or targeted dispatch, and returns consolidated results:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Backstage Search Request (e.g., GET /api/search/query?term=auth&types[]=...)                │
-└──────────────────────────────┬──────────────────────────────────────────────┘
-                                               │
-                                               ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Hybrid Search Engine Router                                                                 │
-│                                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────────────────────┐   │
-│  │ Evaluates requested document categories (`types`) against configured routing matrix   │   │
-│  └───────────────────────────┬──────────────────────────────────────────┘   │
-│                                              │                                              │
-│               ┌──────────────────────────────┴──────────────────────────────┐               │
-│               │                                                             │               │
-│               ▼                                                             ▼               │
-│  ┌─────────────────────────┐                                 ┌───────────────────────────┐  │
-│  │ Targeted Direct Dispatch│                                 │ Federated Parallel Fan-Out│  │
-│  │ (Single Category Type)  │                                 │ (Global / Multiple Types) │  │
-│  └────────────┬────────────┘                                 └─────────────┬─────────────┘  │
-└───────────────┼────────────────────────────────────────────────────────────┼────────────────┘
-                │                                                            │
-                ▼                                                            ▼
-┌──────────────────────────────┐                              ┌──────────────────────────────┐
-│ Target Search Sub-Engine     │                              │ Sub-Engine A   Sub-Engine B   │
-│ (Direct Query & Pagination)  │                              └──────────────┬───────────────┘
-└───────────────┬──────────────┘                                             │
-                │                                                            ▼
-                │                                             ┌──────────────────────────────┐
-                │                                             │ Result Merging & Scoring     │
-                │                                             │ (Score Normalization & Sort) │
-                │                                             └──────────────┬───────────────┘
-                │                                                            │
-                └──────────────────────────────┬─────────────────────────────┘
-                                               │
-                                               ▼
-┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ Consolidated Search Response (`SearchResultResponse`)                                       │
-└─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                                HTTP Search Request                                │
+│                               GET /api/search/query                               │
+└─────────────────────────────────────────┬─────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                            HybridSearchEngine Router                              │
+│                                                                                   │
+│      Evaluates requested document categories (`types`) against routing matrix     │
+│                                         │                                         │
+│                    ┌────────────────────┴────────────────────┐                    │
+│                    ▼                                         ▼                    │
+│         Single-Category Request                   Multi-Category Request          │
+│       (Targeted Direct Dispatch)                (Federated Parallel Fan-Out)      │
+└────────────────────┬─────────────────────────────────────────┬────────────────────┘
+                     │                                         │
+                     ▼                                         ▼
+┌─────────────────────────────────────────┐ ┌───────────────────────────────────────┐
+│        Target Search Sub-Engine         │ │    Sub-Engine A    Sub-Engine B ...   │
+│       (Direct Query Execution)          │ └──────────────────┬────────────────────┘
+└────────────────────┬────────────────────┘                    │
+                     │                                         ▼
+                     │                      ┌───────────────────────────────────────┐
+                     │                      │      Result Merger & Normalizer       │
+                     │                      │     (Score Normalization & Sort)      │
+                     │                      └──────────────────┬────────────────────┘
+                     │                                         │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                            Consolidated Search Response                           │
+└───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Fault Isolation & Parallel Execution
+### Parallel Execution & Fault Isolation
 
 Querying multiple search backends in parallel introduces operational risks: slow network links can delay user responses, and individual backend failures can crash the search request. The hybrid router prevents this through two core mechanisms:
 
 - **Parallel Execution**: Dispatches queries concurrently across sub-engines so overall latency is bounded by the slowest responding engine rather than the sum of all response times.
 - **Fault Isolation**: Suppresses single-engine errors and enforces strict per-engine timeouts, ensuring that if one backend fails or responds slowly, the router still returns valid results from all healthy engines.
 
-### Result Aggregation & Score Merging
+### Result Aggregation & Scores Normalization
 
 When a federated search query returns match payloads from multiple search backends, the router must consolidate these distinct arrays into a single ordered result list.
 
@@ -267,7 +271,7 @@ To resolve this, the hybrid router provides two configurable merging strategies:
   - **Scored Engines**: Scales each raw score relative to the maximum score in that engine's current batch ($\text{score} / \text{max\_score}$), assigning $1.0$ to the top hit and scaling remaining hits proportionally.
   - **Rank-Only Engines**: Generates a synthetic score decaying linearly from $1.0$ down to $0.0$ based on rank position ($1.0 - \text{index} / \text{total\_items}$) for backends that omit numerical scores.
 
-### Pagination Mechanics
+### Pagination
 
 Pagination mechanics in the hybrid architecture depend on whether a query targets a single engine or federates across multiple backends:
 
@@ -277,29 +281,59 @@ Pagination mechanics in the hybrid architecture depend on whether a query target
 
 ## Section 3: Typesense Search Module Architecture
 
-### Architectural Purpose & Design Principles
+### Architecture
 
-The Typesense search backend module (`@backstage-community/plugin-search-backend-module-typesense`) is engineered as an open-source, high-performance search backend for Backstage. Built on Typesense's in-memory engine, it delivers sub-millisecond keyword matching, typo tolerance, structured metadata filtering, and native vector search capabilities.
+The Typesense search backend module (`@backstage-community/plugin-search-backend-module-typesense`) provides an open-source, high-performance search backend for Backstage. Built on Typesense's in-memory engine, it delivers sub-millisecond keyword matching, typo tolerance, structured metadata filtering, and native vector search capabilities.
 
-The module is designed to eliminate the scaling and heap memory limitations of Backstage's default Lunr in-memory engine while avoiding the heavy infrastructure footprint and operational complexity of hosting Elasticsearch clusters.
+The module eliminates the scaling and heap memory limitations of Backstage's default Lunr in-memory engine while avoiding the heavy infrastructure footprint and operational complexity of Elasticsearch clusters.
 
-### Operational Modes: Standalone vs. Hybrid Integration
+```
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                      Typesense Search Module Architecture                         │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  [ Extension Points ]                                                             │
+│    ├── Standalone Mode       : searchEngineRegistryExtensionPoint                 │
+│    └── Hybrid Sub-Engine Mode: hybridSearchEngineRegistryExtensionPoint           │
+│                                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Ingestion & Query Pipeline                                                  │  │
+│  │                                                                             │  │
+│  │ Collator Streams ──► [ Batch Buffer (100 Docs) ] ──► [ Schema Auto-Mapper ] │  │
+│  │                                                             │               │  │
+│  │ SearchQuery       ──► [ Filter & DSL Translator ] ──────────┤               │  │
+│  └─────────────────────────────────────────────────────────────┼───────────────┘  │
+│                                                                │                  │
+│                                                                ▼                  │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Typesense Client (API Key Auth & Client-Side Load Balancer)                 │  │
+│  └──────────────────────────────┬──────────────────────────────┬───────────────┘  │
+│                                 │ (Failover & Health Check)    │                  │
+│                                 ▼                              ▼                  │
+│                      ┌─────────────────────┐        ┌─────────────────────┐       │
+│                      │ Typesense Node 1    │        │ Typesense Node 2... │       │
+│                      │  backstage_catalog  │        │  backstage_techdocs │       │
+│                      └─────────────────────┘        └─────────────────────┘       │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
 
-The Typesense module supports two distinct operational modes depending on portal deployment requirements:
+### Operational Modes
 
-- **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the single search engine for the portal. All collator indexing streams and search queries across all document categories are handled exclusively by Typesense.
+The Typesense module supports two operational modes depending on portal deployment requirements:
 
-- **Hybrid Sub-Engine Mode (Router Integration)**: Registers into `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
+- **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the portal's primary search engine. All collator indexing streams and search queries across all document categories are handled exclusively by Typesense.
+- **Hybrid Sub-Engine Mode (Router Integration)**: Registers into the `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
 
 ### Authentication
 
-Authentication between the search module and the external Typesense service is secured using API key credentials (`apiKey`). The module passes this key during client initialization to authenticate all collection management, document indexing streams, and search query API calls.
+Authentication between the search module and external Typesense instances is secured via API key credentials (`apiKey`). The module supplies this key during client initialization to authenticate collection management, document indexing streams, and search query API calls.
 
-### Cluster Topology & Resilience
+### Cluster Topology
 
-Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path for a cluster instance. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable during operation.
+Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional path prefix. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable.
 
-### Schema & Document Indexing
+### Schema Management & Document Indexing
 
 Typesense organizes documents into collections, which require a defined schema before documents can be inserted. The Typesense search module manages collection setup automatically as Backstage collators run.
 
@@ -307,53 +341,163 @@ Collection names follow a `backstage_<type>` naming convention (such as `backsta
 
 To optimize indexing throughput, the module buffers incoming documents from collator streams in memory and writes them to Typesense in batch payloads of 100 items.
 
-### Query Translation & Filtering
+### Query Processing & Filtering
 
-The module converts Backstage search queries into native Typesense API requests:
-
-- **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for document metadata and field criteria (such as `kind`, `namespace`, or `owner`).
+The module translates Backstage `SearchQuery` objects into native Typesense search requests. Search terms are mapped to keyword queries over target collection fields, while structured Backstage filter objects are converted into Typesense `filter_by` boolean expressions (such as `kind:=component AND namespace:=default`) to filter search results by document metadata.
 
 ## Section 4: Vertex AI Search Backend Module Architecture
 
-### Architectural Purpose & Design Principles
+### Architecture
 
 The Vertex AI Search backend module (`@backstage-community/plugin-search-backend-module-vertexai`) integrates Backstage search with Google Cloud Vertex AI Search (Discovery Engine API). It provides fully managed enterprise search capabilities, leveraging machine learning for semantic relevance, natural language query understanding, and automated document indexing without requiring self-hosted search infrastructure.
 
 The module enables Backstage deployments to offload search indexing and retrieval to Google Cloud, providing high scalability for large catalog and documentation workloads.
 
-### Operational Modes: Standalone vs. Hybrid Integration
+### Operational Modes
 
 The Vertex AI Search module supports two operational modes depending on deployment needs:
 
 - **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the primary search engine for the portal. Collator streams index all Backstage document types into configured Google Cloud Data Stores, and all search queries are served through Vertex AI Search engines.
-
 - **Hybrid Sub-Engine Mode (Router Integration)**: Registers into `hybridSearchEngineRegistryExtensionPoint` as a specialized sub-engine. In hybrid deployments, Vertex AI Search is assigned to specific document categories (for instance, TechDocs) to deliver semantic search over unstructured content, while structured entities are routed to complementary backends.
 
-### Data Store & Engine Topology
+### Data Stores & App Engines
 
 In Vertex AI Search, data storage and query execution are decoupled:
 
 - **Data Stores**: Represent storage containers for indexed documents. Each document type is configured with a target GCP project ID, region/location (such as `global` or `europe-west4`), and Data Store ID (`datastoreId`).
 - **App Engines**: Represent query-serving endpoints built over one or more Data Stores. The module supports per-type engines for category-specific search and a global blended search app engine (`blendedSearch`) that queries across multiple Data Stores for unified multi-category requests.
 
-Authentication and request routing rely on Google Cloud Application Default Credentials (ADC) and location-aware API endpoints (using global endpoints or location-prefixed routes such as `<location>-discoveryengine.googleapis.com`).
+Authentication and request routing rely on Google Cloud Application Default Credentials (ADC). The module dynamically manages regionalized `SearchServiceClient` instances, routing requests to location-prefixed endpoints (`<location>-discoveryengine.googleapis.com`) or global endpoints to enforce data residency compliance.
 
 ### Schema & Document Indexing
 
 Document ingestion into Vertex AI Search Data Stores is configurable per document type via two operational indexing modes:
 
 - **Direct Ingestion Mode**: Backstage collators push document streams directly into the target Data Store using batch inline imports (up to 100 items per payload). Within a single document stream, batches are sent sequentially (with an optional configurable delay) to avoid exceeding Google Cloud API rate limits. Document location URIs are deterministically hashed to generate stable document IDs, enabling upsert operations during re-indexing runs. Direct ingestion is enforced as a safety guardrail for software catalog entities (`software-catalog`); because catalog entities originate directly within Backstage rather than external storage buckets (as with TechDocs documentation stored in Cloud Storage), collator streaming is required to keep the search index synchronized with live catalog changes.
-
 - **Bypassed Ingestion Mode**: Local collator indexing in Backstage is completely bypassed by returning a dummy stream. This mode is used when content originates externally—such as TechDocs documentation generated by CI/CD build pipelines and published directly to Cloud Storage. Ingestion is offloaded to asynchronous pipelines that populate the Data Store out-of-band, eliminating CPU and memory overhead on the Backstage backend. The EventArc integration module that automates Cloud Storage ingestion is detailed in Section 5.
 
-### Query Translation & Blended Search
+### Query Processing
 
-The module translates Backstage `SearchQuery` objects into Discovery Engine API requests based on query scope and configuration:
+Query translation converts generic Backstage `SearchQuery` objects into native Google Cloud Discovery Engine API requests. The translation process resolves target endpoints based on query scope, active deployment mode, and filter criteria.
 
-- **Single-Category Queries**: When a query targets a single document category (such as `types[]=techdocs`), the module routes the request to that category's designated backend. By default, queries target the category's underlying **Data Store** directly. Optionally, if a dedicated **App Engine** is defined for that category, queries route through the App Engine endpoint to apply custom serving configurations.
+When a query targets a single document category (such as TechDocs), the module routes the request to that category's designated backend. By default, queries target the underlying Data Store directly. If a category-specific App Engine is configured, the request routes through the App Engine endpoint instead, applying custom serving rules, tuning, and ranking configurations.
 
-- **Multi-Category Blended Search**: When a query specifies multiple document types or omits category filters entirely (global portal search), the module routes the request to a global **Blended Search Engine App** (`blendedSearch`). This blended engine federates and ranks results across multiple underlying Data Stores in a single Discovery Engine call.
+For multi-category queries—or global search requests that omit category filters—the module targets a unified `blendedSearch` App Engine. This blended app federates and ranks results across multiple underlying Data Stores in a single Discovery Engine API call. However, blended search execution applies exclusively when the module operates in Standalone Mode as the portal's primary search engine. In Hybrid Sub-Engine Mode, multi-category federation is managed upstream by the `HybridSearchEngine` router rather than an individual sub-engine.
 
-- **Blended Search Prerequisites**: Querying a blended search engine only applies when the module operates in **Standalone Mode** as the portal's primary search engine. In **Hybrid Sub-Engine Mode**, multi-category federation across backends is managed by the Hybrid Search Router rather than an individual search engine.
+Structured Backstage filter objects are converted into Discovery Engine filter expressions using `key: ANY("value")` syntax, mapping entity metadata fields (such as `kind`, `namespace`, or `owner`) directly into target query filters.
 
-- **Filter Mapping**: Translates Backstage filter objects into Discovery Engine boolean expressions (using `key: ANY("value")` syntax) for structured metadata matching.
+### Content Extraction
+
+When converting search responses from Google Cloud Vertex AI Search into Backstage search results, the module normalizes multi-layered semantic content into Backstage's single unified result text field.
+
+Vertex AI Search evaluates queries dynamically and returns content at multiple levels of granularity—ranging from direct natural language answers to paragraph-length passages and highlighted snippets. To balance relevance, contextual depth, and readability in the portal user interface, the module evaluates returned content using a strict **4-tier priority hierarchy**:
+
+```
+┌───────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           Extractive Content Resolution Cascade                               │
+├───────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Priority 1: Extractive Answers    ──► Direct sentence answers to natural language queries    │
+│                 │ (If missing / empty)                                                        │
+│                 ▼                                                                             │
+│  Priority 2: Extractive Segments   ──► Multi-sentence paragraph blocks containing query terms │
+│                 │ (If missing / empty)                                                        │
+│                 ▼                                                                             │
+│  Priority 3: Search Snippets       ──► Traditional keyword match snippets                     │
+│                 │ (If missing / empty)                                                        │
+│                 ▼                                                                             │
+│  Priority 4: Fallback Document Body──► Raw body text of the indexed document                  │
+└───────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **Extractive Answers**: High-precision, direct sentences that synthesize answers to natural language questions (for example, _"How do I configure OAuth in the auth-service?"_). Because extractive answers directly satisfy informational queries with minimal noise, they take highest priority over all other content types.
+- **Extractive Segments**: Paragraph-length context blocks surrounding query terms. When no single-sentence direct answer exists, segments preserve larger contextual blocks so engineers can understand surrounding documentation without navigating away from search results.
+- **Search Snippets**: Traditional keyword match fragments containing highlighted query terms bounded by contextual text. These apply when Vertex AI Search processes a targeted keyword lookup rather than a semantic question.
+- **Fallback Document Body**: If Vertex AI Search returns no extractive answers, segments, or snippets for a matching record, the module falls back to the raw body text of the indexed document page. This acts as a safety guardrail to ensure every search result displays a non-empty summary.
+
+## Section 5: GCS Eventarc Ingestion Webhook Architecture
+
+### Architecture
+
+The GCS Eventarc ingestion module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) provides an event-driven webhook ingress that decouples technical documentation processing from the Backstage application server.
+
+Standard Backstage TechDocs ingestion compiles static markdown sites and executes search indexing directly within the Node.js backend process memory, causing V8 heap expansion, garbage collection freezes, and event loop latency during large documentation builds. The GCS Eventarc module resolves these bottlenecks by introducing **Decoupled Asynchronous Ingestion**:
+
+- **Offloaded Site Compilation**: Documentation builds (`techdocs-cli` / MkDocs) are executed in external CI/CD pipelines (e.g., GitHub Actions or Google Cloud Build), which compile markdown to static HTML and publish the site manifest (`search_index.json`) directly to a Google Cloud Storage (GCS) bucket.
+- **Event-Driven Asynchronous Synchronization**: Instead of periodic polling streams inside Node.js runtime memory, GCS storage creation events trigger lightweight webhooks via Google Cloud Eventarc to execute index synchronization out-of-band.
+
+### Webhook Ingress & Execution Flow
+
+The module exposes a dedicated HTTP webhook endpoint mounted on the Backstage events router at `/api/events/gcs`:
+
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           Decoupled Eventarc Ingestion Sequence                             │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  CI/CD Pipeline ──► Upload search_index.json ──► GCS TechDocs Bucket                        │
+│                                                        │                                    │
+│                                                        ▼ (google.cloud.storage.object.v1.finalized)
+│                                                Google Eventarc Trigger                      │
+│                                                        │                                    │
+│                                                        ▼                                    │
+│                                            Private GKE / Cloud Run Webhook                  │
+│                                            (HTTP POST /api/events/gcs)                      │
+│                                                        │                                    │
+│                                                        ▼ (Acknowledge HTTP 200 OK)          │
+│                                            Internal Backstage Event Bus                     │
+│                                                        │                                    │
+│                                                        ▼ (Asynchronous Background Worker)   │
+│                                            1. Download search_index.json (Gen N)            │
+│                                            2. Enrich Docs via CatalogService                │
+│                                            3. Compute Stable MD5 Document IDs               │
+│                                            4. Calculate Delta vs Historical Gen N-1         │
+│                                            5. Upsert Active & Purge Stale Documents         │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Storage Event Emission**: When a CI/CD pipeline uploads `search_index.json` to GCS, Cloud Storage emits a `google.cloud.storage.object.v1.finalized` event containing the target bucket name, object path, and generation ID ($N$).
+2. **Eventarc Routing**: Google Cloud Eventarc intercepts the storage event and delivers an HTTP POST request to `/api/events/gcs`.
+3. **Non-Blocking Webhook Acknowledgment**: The webhook endpoint validates request headers, acknowledges receipt immediately to Eventarc with HTTP 200 OK, and dispatches a background task (`gcs-notifications`) to the internal event bus. User HTTP traffic on the portal server is never blocked.
+4. **Asynchronous Background Processing**: The background worker downloads the manifest, enriches documents, and synchronizes the search index out-of-band.
+
+### Catalog Metadata Enrichment
+
+Raw documentation manifests produced by site generators contain page titles and text, but lack portal context such as team ownership, component lifecycle, or authorization controls.
+
+When processing an incoming documentation site (e.g., `default/component/auth-service/search_index.json`), the background worker queries the Backstage Catalog Service (`CatalogService`) to resolve the parent entity (`Component:default/auth-service`). It then enriches every document page before indexing:
+
+- **Entity Metadata Enrichment**: Attaches `owner` (`spec.owner`), `lifecycle` (`spec.lifecycle`), `componentType` (`spec.type`), and `annotations` (`metadata.annotations`) to enable faceted search filtering on the portal UI.
+- **Authorization Reference Enrichment**: Attaches the parent entity reference (`component:default/auth-service`) as an authorization resource tag to support downstream access control.
+
+### Deterministic Path Hashing
+
+To execute upsert operations and targeted deletions, search engines require stable, deterministic document identifiers. The module constructs stable document IDs by computing MD5 hashes over canonicalized document URIs:
+
+$$\text{canonicalPath} = \text{`/docs/\${namespace.toLowerCase()}/\${kind.toLowerCase()}/\${name.toLowerCase()}/\${cleanLocation}`}$$
+
+$$\text{docId} = \text{md5}(\text{canonicalPath})$$
+
+- **Path Canonicalization**: Entity identifiers (`namespace`, `kind`, `name`) are explicitly lowercased, leading/trailing slashes are trimmed, and redundant filename suffixes (such as `index.html`) are stripped.
+- **Idempotency Guarantee**: Re-indexing the same documentation page across multiple CI/CD deployments produces identical 32-character hexadecimal MD5 digests, allowing search engines to update existing entries without creating duplicate records.
+
+### Differential Reconciliation
+
+Standard pull indexers process data strictly as append/overwrite operations, leaving deleted or renamed documentation pages in search indices as orphaned "ghost results" that cause 404 links.
+
+The GCS Eventarc module resolves this through **Differential Reconciliation**:
+
+1. **Active Set Construction**: The worker parses the current `search_index.json` manifest (GCS Generation $N$), enriches active pages, and builds the active document ID set:
+   $$Set_{\text{current}} = \{\text{docId}(p) \mid p \in D_{\text{current}}\}$$
+2. **Historical Set Fetching**: The worker queries GCS object versioning history to download the preceding `search_index.json` manifest (GCS Generation $N-1$) and builds the historical document ID set:
+   $$Set_{\text{previous}} = \{\text{docId}(p) \mid p \in D_{\text{previous}}\}$$
+3. **Delta Set Subtraction**: The worker performs set subtraction to identify pages that existed in Generation $N-1$ but were removed in Generation $N$:
+   $$Set_{\text{deleted}} = Set_{\text{previous}} \setminus Set_{\text{current}}$$
+4. **Active Upsert & Throttled Purge**: Active documents ($Set_{\text{current}}$) are batch-ingested into Vertex AI Search in concurrent import requests (`batchSize: 100`). Deleted documents ($Set_{\text{deleted}}$) are issued to the search engine as explicit deletion requests regulated by a concurrency throttle (`maxConcurrency: 5`) to prevent rate limit exhaustion.
+
+### Operational Modes & Security Models
+
+The module supports two distinct authentication models depending on infrastructure deployment architecture:
+
+- **Google OIDC ID Token Verification**: For public HTTPS endpoints or Cloud Run deployments, the webhook inspects incoming `Authorization: Bearer <ID_TOKEN>` headers. Using `google-auth-library`, it cryptographically validates token signatures, issuer (`https://accounts.google.com`), target audience (`${baseUrl}/api/events/gcs`), and expected service account email.
+- **Private GKE VPC Network Isolation**: For private GKE cluster deployments, Eventarc provisions a cluster-local `gke-forwarder` pod that delivers events internally over VPC port 80. Because this local forwarder cannot generate Google OIDC tokens, OIDC verification is set to `false`. Endpoint security is enforced at the network layer using edge path blocking (Cloud Armor 403 policies, Gateway API path rewrites, NGINX `deny all`) and Kubernetes `NetworkPolicies` restricting port 80 access exclusively to Eventarc forwarder namespaces.
