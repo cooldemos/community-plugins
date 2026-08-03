@@ -494,15 +494,21 @@ By leveraging GCS storage mutation events and object versioning, the Eventarc we
 
 1. **Index File Inspection**: When an updated `search_index.json` file is published, the background worker parses active pages and compiles the current document set.
 2. **Historical Version Fetching**: Using GCS object versioning, the worker retrieves the preceding `search_index.json` file to build the historical document set.
-3. **Delta Calculation**: By subtracting the active document set from the historical set, the worker identifies deleted or moved pages ($D_{\text{deleted}} = D_{\text{previous}} \setminus D_{\text{current}}$).
+3. **Delta Calculation**: By subtracting the active document set from the historical set, the worker identifies deleted or moved pages.
 4. **Synchronized Ingestion & Purging**: Active pages are batch-ingested into the search backend, while deleted pages are explicitly removed using throttled deletion requests to avoid API rate limits.
 
-### Operational Modes & Security Models
+### Webhook Authentication & Ingress Security
 
-The module supports two distinct authentication models depending on infrastructure deployment architecture:
+The GCS Eventarc module supports two security models, determined by whether Eventarc delivers notifications to a public Cloud Run endpoint or a private GKE cluster destination. By default, OIDC authentication is enabled (`enabled: true`).
 
-- **Google OIDC ID Token Verification**: For public HTTPS endpoints or Cloud Run deployments, the webhook inspects incoming `Authorization: Bearer <ID_TOKEN>` headers. Using `google-auth-library`, it cryptographically validates token signatures, issuer (`https://accounts.google.com`), target audience (`${baseUrl}/api/events/gcs`), and expected service account email.
-- **Private GKE VPC Network Isolation**: For private GKE cluster deployments, Eventarc provisions a cluster-local `gke-forwarder` pod that delivers events internally over VPC port 80. Because this local forwarder cannot generate Google OIDC tokens, OIDC verification is set to `false`. Endpoint security is enforced at the network layer using edge path blocking (Cloud Armor 403 policies, Gateway API path rewrites, NGINX `deny all`) and Kubernetes `NetworkPolicies` restricting port 80 access exclusively to Eventarc forwarder namespaces.
+- **Cloud Run Destinations (OIDC Authorization)**: When targeting Cloud Run, Eventarc automatically generates and attaches a signed Google OIDC ID token in the `Authorization: Bearer` request header. The webhook validates the token's cryptographic signature, issuer (`https://accounts.google.com`), target audience, and configured service account email.
+- **GKE Destinations (Network Layer Isolation)**: When targeting GKE services, Eventarc routes events through an internal, cluster-local `gke-forwarder` pod over private VPC lines. Because the forwarder pod does not attach OIDC tokens, OIDC authentication must be explicitly disabled (`enabled: false`).
+
+When OIDC authentication is disabled for GKE deployments, security must be enforced at the network ingress layer to prevent unauthorized access to `/api/events/gcs`. Operators have three complementary isolation mechanisms:
+
+- **Edge Path Rewriting**: GKE Gateway API `URLRewrite` rules rewrite public requests targeting `/api/events/gcs` to an unmapped path, returning a `404 Not Found` to public traffic while permitting internal Eventarc routing.
+- **Ingress Layer Blocking**: Edge security policies—such as Google Cloud Armor 403 deny rules or NGINX Ingress blocking rules—drop public requests matching the webhook route at the load balancer.
+- **Kubernetes NetworkPolicies**: Cluster-level `NetworkPolicies` isolate port 80 ingress, restricting traffic exclusively to Eventarc's managed namespace (`eventarc-*`).
 
 # Part 3: Deployment & Operations Manual
 
