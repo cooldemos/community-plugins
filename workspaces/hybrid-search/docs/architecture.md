@@ -311,5 +311,5 @@ To optimize indexing throughput, the module buffers incoming documents from coll
 
 The module converts Backstage search queries into native Typesense API requests:
 
-- **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for category and metadata queries.
+- **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for document metadata and field criteria (such as `kind`, `namespace`, or `owner`).
 - **Document Identification**: Derives a stable document ID from a document's location URI when an explicit ID is missing, using `upsert` mode during ingestion to overwrite existing records and prevent duplicates across re-indexing runs.
