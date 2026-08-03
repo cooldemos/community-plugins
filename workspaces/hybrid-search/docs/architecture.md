@@ -643,14 +643,20 @@ In standalone mode, Backstage homepage queries execute across multiple document 
 - **Standalone Requirement**: The `blendedSearch` block in `app-config.yaml` is **mandatory** when operating in standalone mode.
 - **Hybrid Router Conflict**: In a Hybrid Search Router setup (Section 3), `blendedSearch` **must be omitted**. Query blending across engines is managed by the Backstage Hybrid Search Router itself; configuring `blendedSearch` in hybrid mode results in a startup configuration error.
 
-### Base GCP Infrastructure Provisioning (Terraform)
+### Infrastructure Provisioning (Terraform)
 
-Regardless of whether ingestion runs via in-process collators (Option A) or offloaded pipelines (Option B), the underlying Google Cloud Discovery Engine Data Stores and Schemas must be provisioned in Google Cloud using Terraform for each Backstage content type (e.g. `techdocs`, `software-catalog`). Additionally, a **Global Blended Search App** linking all Data Stores must be provisioned for standalone portal-wide queries.
+All Google Cloud infrastructure required for Vertex AI Search and event-driven TechDocs ingestion can be provisioned using a single, unified Terraform module.
+
+The manifest below organizes resources into logical blocks, with explicit comments indicating **when** each resource is required based on your deployment choices (Standalone vs. Hybrid Router mode, and Direct Collator vs. Decoupled Eventarc Ingestion):
 
 ```hcl
-# 1. Provision Vertex AI Search Data Store for TechDocs
+# ============================================================================
+# 1. BASE DATA STORES & SCHEMAS (REQUIRED for all deployment modes)
+# Provision one Data Store and schema for each Backstage content type.
+# ============================================================================
+
 resource "google_discovery_engine_data_store" "techdocs_datastore" {
-  location                    = "global" # 'global', 'us', or 'eu'
+  location                    = var.region # 'global', 'us', or 'eu'
   data_store_id               = "techdocs-datastore"
   display_name                = "Backstage TechDocs Data Store"
   industry_vertical           = "GENERIC"
@@ -659,7 +665,6 @@ resource "google_discovery_engine_data_store" "techdocs_datastore" {
   create_advanced_site_search = false
 }
 
-# 2. Provision Semi-Dynamic Schema for TechDocs Data Store
 resource "google_discovery_engine_schema" "techdocs_schema" {
   location      = google_discovery_engine_data_store.techdocs_datastore.location
   data_store_id = google_discovery_engine_data_store.techdocs_datastore.data_store_id
@@ -682,9 +687,8 @@ resource "google_discovery_engine_schema" "techdocs_schema" {
   })
 }
 
-# 3. Provision Vertex AI Search Data Store for Software Catalog
 resource "google_discovery_engine_data_store" "catalog_datastore" {
-  location                    = "global"
+  location                    = var.region
   data_store_id               = "catalog-datastore"
   display_name                = "Backstage Catalog Data Store"
   industry_vertical           = "GENERIC"
@@ -693,11 +697,16 @@ resource "google_discovery_engine_data_store" "catalog_datastore" {
   create_advanced_site_search = false
 }
 
-# 4. Provision Global Blended Search App (Required for Standalone Mode portal-wide queries)
+# ============================================================================
+# 2. GLOBAL BLENDED SEARCH APP
+# REQUIRED for Standalone Mode (Section 2) portal-wide homepage search.
+# OMIT in Hybrid Search Router Mode (Section 3) to avoid config errors.
+# ============================================================================
+
 resource "google_discovery_engine_search_engine" "blended_search_engine" {
   engine_id      = "backstage-global-search-app"
   collection_id  = "default_collection"
-  location       = "global"
+  location       = var.region
   display_name   = "Backstage Global Blended Search App"
   data_store_ids = [
     google_discovery_engine_data_store.techdocs_datastore.data_store_id,
@@ -709,12 +718,17 @@ resource "google_discovery_engine_search_engine" "blended_search_engine" {
   }
 }
 
-# 5. Provision Dedicated Search App Engine per Data Store (Optional - for custom query tuning/boosts)
+# ============================================================================
+# 3. DEDICATED SEARCH APP ENGINE (OPTIONAL)
+# Provision ONLY if custom query tuning, boost rules, or synonyms are needed
+# for a specific content type (falls back to querying Data Store if omitted).
+# ============================================================================
+
 resource "google_discovery_engine_search_engine" "techdocs_dedicated_engine" {
   engine_id      = "techdocs-search-app"
   collection_id  = "default_collection"
   location       = google_discovery_engine_data_store.techdocs_datastore.location
-  display_name   = "TechDocs Search App Engine"
+  display_name   = "TechDocs Dedicated Search App Engine"
   data_store_ids = [google_discovery_engine_data_store.techdocs_datastore.data_store_id]
 
   search_engine_config {
@@ -722,18 +736,90 @@ resource "google_discovery_engine_search_engine" "techdocs_dedicated_engine" {
   }
 }
 
-# 4. Grant Discovery Engine Admin role to Backstage Service Account (Admin required for document purging)
+# ============================================================================
+# 4. BACKSTAGE SERVICE ACCOUNT IAM ROLES (REQUIRED for all modes)
+# ============================================================================
+
+# Admin role is required to purge/delete indexed documents during cleanup
 resource "google_project_iam_member" "backstage_discovery_engine" {
   project = var.project_id
   role    = "roles/discoveryengine.admin"
   member  = "serviceAccount:${var.backstage_sa_email}"
 }
 
-# 5. Grant Storage Object Admin role for GCS TechDocs orphan cleanup
+# Object Admin role is required for orphan TechDocs folder cleanup in GCS
 resource "google_storage_bucket_iam_member" "backstage_techdocs_gcs" {
   bucket = var.techdocs_bucket_name
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${var.backstage_sa_email}"
+}
+
+# ============================================================================
+# 5. EVENTARC PIPELINE RESOURCES
+# REQUIRED ONLY for Option B (Decoupled Eventarc Ingestion & Cleanup Sweeper).
+# OMIT if using Option A (Direct Collator Ingestion).
+# ============================================================================
+
+# Eventarc Trigger Service Account
+resource "google_service_account" "eventarc_sa" {
+  account_id   = "backstage-eventarc-sa"
+  display_name = "Backstage Eventarc Trigger Service Account"
+}
+
+# Grant Eventarc Receiver role to Service Account
+resource "google_project_iam_member" "eventarc_receiver" {
+  project = var.project_id
+  role    = "roles/eventarc.eventReceiver"
+  member  = "serviceAccount:${google_service_account.eventarc_sa.email}"
+}
+
+# Grant Pub/Sub Publisher role to Google Cloud Storage Service Agent
+resource "google_project_iam_member" "gcs_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${var.project_number}@gs-project-accounts.iam.gserviceaccount.com"
+}
+
+# Eventarc Trigger routing GCS object updates to Backstage webhook
+resource "google_eventarc_trigger" "gcs_techdocs_trigger" {
+  name     = "gcs-techdocs-to-backstage"
+  location = var.region
+  project  = var.project_id
+
+  matching_criteria {
+    attribute = "type"
+    value     = "google.cloud.storage.object.v1.finalized"
+  }
+
+  matching_criteria {
+    attribute = "bucket"
+    value     = var.techdocs_bucket_name
+  }
+
+  destination {
+    gke {
+      cluster   = var.gke_cluster_name
+      location  = var.gke_cluster_location
+      namespace = "backstage"
+      service   = "backstage"
+      path      = "/api/events/gcs"
+    }
+  }
+
+  service_account = google_service_account.eventarc_sa.email
+}
+
+# ============================================================================
+# 6. CUSTOMER-MANAGED ENCRYPTION KEYS / CMEK (OPTIONAL)
+# Provision ONLY if organizational compliance requires CMEK encryption.
+# ============================================================================
+
+resource "google_eventarc_google_channel_config" "cmek_config" {
+  provider        = google-beta
+  location        = var.region
+  project         = var.project_id
+  name            = "googleChannelConfig"
+  crypto_key_name = var.kms_key_id
 }
 ```
 
@@ -892,62 +978,7 @@ search:
 | **`cleanup.enabled`**                    | `boolean` (Optional)  | `true`            | Enables periodic `techdocs-orphan-sweeper` background task to purge deleted catalog documents from GCP.            |
 | **`cleanup.frequency`**                  | `Duration` (Optional) | `{ hours: 2 }`    | Frequency schedule for running the catalog orphan reconciliation task (`hours`, `minutes`, `seconds`).             |
 
-#### 3. Eventarc Pipeline Infrastructure Provisioning (Terraform)
-
-Provision the Eventarc trigger, Service Account, and IAM roles to route `object.v1.finalized` storage events from the TechDocs GCS bucket to Backstage:
-
-```hcl
-# 1. Eventarc Service Account
-resource "google_service_account" "eventarc_sa" {
-  account_id   = "backstage-eventarc-sa"
-  display_name = "Backstage Eventarc Trigger Service Account"
-}
-
-# 2. Grant Eventarc Receiver role to SA
-resource "google_project_iam_member" "eventarc_receiver" {
-  project = var.project_id
-  role    = "roles/eventarc.eventReceiver"
-  member  = "serviceAccount:${google_service_account.eventarc_sa.email}"
-}
-
-# 3. Grant Pub/Sub Publisher role to GCS Service Agent
-resource "google_project_iam_member" "gcs_pubsub_publisher" {
-  project = var.project_id
-  role    = "roles/pubsub.publisher"
-  member  = "serviceAccount:service-${var.project_number}@gs-project-accounts.iam.gserviceaccount.com"
-}
-
-# 4. Eventarc Trigger for GKE Destination
-resource "google_eventarc_trigger" "gcs_techdocs_trigger" {
-  name     = "gcs-techdocs-to-backstage"
-  location = var.region
-  project  = var.project_id
-
-  matching_criteria {
-    attribute = "type"
-    value     = "google.cloud.storage.object.v1.finalized"
-  }
-
-  matching_criteria {
-    attribute = "bucket"
-    value     = var.techdocs_bucket_name
-  }
-
-  destination {
-    gke {
-      cluster   = var.gke_cluster_name
-      location  = var.gke_cluster_location
-      namespace = "backstage"
-      service   = "backstage"
-      path      = "/api/events/gcs"
-    }
-  }
-
-  service_account = google_service_account.eventarc_sa.email
-}
-```
-
-#### 3. Reliability & Encryption Hardening (DLQ & CMEK)
+#### 3. Pub/Sub Dead-Letter Queue (DLQ) Operational Configuration
 
 Configure a Pub/Sub Dead-Letter Queue (DLQ) to preserve failed notifications during backend downtime:
 
@@ -959,18 +990,6 @@ gcloud pubsub topics create gcs-eventarc-dlq
 gcloud pubsub subscriptions update <EVENTARC_SUBSCRIPTION_NAME> \
   --dead-letter-topic=gcs-eventarc-dlq \
   --max-delivery-attempts=5
-```
-
-If organizational policy requires Customer-Managed Encryption Keys (CMEK), bind Cloud KMS to Eventarc:
-
-```hcl
-resource "google_eventarc_google_channel_config" "default" {
-  provider        = google-beta
-  location        = var.region
-  project         = var.project_id
-  name            = "googleChannelConfig"
-  crypto_key_name = var.kms_key_id
-}
 ```
 
 ---
