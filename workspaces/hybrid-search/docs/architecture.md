@@ -482,9 +482,9 @@ When processing an incoming manifest, the background worker queries the Backstag
 
 ### Deterministic Path Hashing
 
-Search engines require stable document identifiers to execute idempotent updates and targeted deletions across documentation builds.
+To avoid wiping and rebuilding an entire search index on every update, search backends require stable document identifiers to perform targeted upserts and deletions.
 
-By hashing normalized document paths, the module guarantees that successive builds produce identical document IDs. This allows search backends to update existing records in-place without creating duplicate entries.
+The module constructs deterministic document IDs by hashing normalized relative paths. This ensures that successive builds produce identical IDs for unchanged pages, enabling in-place document updates and precise differential cleanup without full index re-indexing.
 
 ### Differential Reconciliation
 
