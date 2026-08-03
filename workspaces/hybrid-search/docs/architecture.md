@@ -300,7 +300,7 @@ In Typesense, a **collection** is an indexed dataset container—analogous to a 
 
 ### Query Translation & Filter Transformation
 
-The module bridges Backstage's abstract search interface with Typesense's native REST API by translating query and document structures:
+The module bridges Backstage's abstract search interface with Typesense's native API by translating query and document structures:
 
-- **Filter Expression Mapping**: Converts Backstage `SearchQuery` filter objects into Typesense boolean filter expressions (`filter_by`), mapping key-value predicates and array list filters (e.g., `kind:=Component && namespace:=default`) for precise category and metadata filtering.
-- **Deterministic Document IDs & Upsert Semantics**: During collator ingestion, documents without explicit IDs are assigned a deterministic ID derived by hex-encoding their location URI (`doc.location`). Documents are ingested using `upsert` semantics to update existing records in-place and prevent duplicate records across scheduled collator re-runs.
+- **Filter Expression Mapping**: Converts Backstage search filter objects into Typesense boolean filter expressions, mapping key-value predicates and list filters for precise metadata filtering.
+- **Deterministic Document IDs & Upsert Semantics**: During collator ingestion, documents lacking explicit IDs are assigned a deterministic identifier derived from their location URI. Documents are ingested using upsert semantics to update existing records in-place and prevent duplicates across re-indexing runs.
