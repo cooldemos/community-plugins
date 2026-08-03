@@ -176,7 +176,7 @@ The core architectural solution to the limitations of standard Backstage search 
 
 In a developer portal, search queries specify target document categories through request parameters (such as `types[]=software-catalog` or `types[]=techdocs`). Rather than executing every query against a single search backend, the router evaluates these category parameters against a configured routing matrix to select the optimal dispatch pattern. When a query targets a single category, the router forwards the request directly to the mapped search engine. Conversely, when a query spans multiple categories or requests a portal-wide search, the router broadcasts the query concurrently across all relevant sub-engines, aggregating and normalizing downstream responses into a unified result set.
 
-If a search query requests an unmapped document category, the router checks for a registered default fallback engine (`default`). If present, the query is routed to that fallback backend; otherwise, the router returns an empty result set.
+If a search query requests an unmapped document category, the router checks for a registered default fallback engine. If present, the query is routed to that fallback backend; otherwise, the router returns an empty result set.
 
 The following sequence illustrates how the `HybridSearchEngine` intercepts incoming HTTP queries, evaluates request parameters against the routing matrix, executes parallel or targeted dispatch, and returns consolidated results:
 
