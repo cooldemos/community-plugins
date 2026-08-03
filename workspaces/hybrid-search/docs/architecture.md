@@ -312,4 +312,42 @@ To optimize indexing throughput, the module buffers incoming documents from coll
 The module converts Backstage search queries into native Typesense API requests:
 
 - **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for document metadata and field criteria (such as `kind`, `namespace`, or `owner`).
-- **Document Identification**: Derives a stable document ID from a document's location URI when an explicit ID is missing, using `upsert` mode during ingestion to overwrite existing records and prevent duplicates across re-indexing runs.
+
+## Section 4: Vertex AI Search Backend Module Architecture
+
+### Architectural Purpose & Design Principles
+
+The Vertex AI Search backend module (`@backstage-community/plugin-search-backend-module-vertexai`) integrates Backstage search with Google Cloud Vertex AI Search (Discovery Engine). It provides fully managed enterprise search capabilities, leveraging machine learning for semantic relevance, natural language query understanding, and automated document indexing without requiring self-hosted search infrastructure.
+
+The module enables Backstage deployments to offload search indexing and retrieval to Google Cloud, providing high scalability for large catalog and documentation workloads.
+
+### Operational Modes: Standalone vs. Hybrid Integration
+
+The Vertex AI Search module supports two operational modes depending on deployment needs:
+
+- **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the primary search engine for the portal. Collator streams index all Backstage document types into configured Google Cloud Data Stores, and all search queries are served through Vertex AI Search engines.
+
+- **Hybrid Sub-Engine Mode (Router Integration)**: Registers into `hybridSearchEngineRegistryExtensionPoint` as a specialized sub-engine. In hybrid deployments, Vertex AI Search is assigned to specific document categories (such as TechDocs) to deliver semantic search over unstructured content, while structured entities are routed to complementary backends.
+
+### Data Store & Engine Topology
+
+In Vertex AI Search, data storage and query execution are decoupled:
+
+- **Data Stores**: Represent storage containers for indexed documents. Each document type is configured with a target GCP project ID, region/location (such as `global` or `europe-west4`), and Data Store ID (`datastoreId`).
+- **App Engines**: Represent query-serving endpoints built over one or more Data Stores. The module supports per-type engines for category-specific search and a global blended search app engine (`blendedSearch`) that queries across multiple Data Stores for unified multi-category requests.
+
+Authentication and request routing rely on Google Cloud Application Default Credentials (ADC) and regional API endpoints (`<location>-discoveryengine.googleapis.com`).
+
+### Schema & Document Indexing
+
+The module streams index documents directly into Google Cloud Data Stores via an internal write stream:
+
+- **Inline Batch Ingestion**: Buffers collator document streams into memory and flushes them in bulk payloads (up to 100 documents) directly to Discovery Engine using inline imports, bypassing the need for intermediate staging in Google Cloud Storage. Optional throttling delays (`throttleMs`) allow controlling ingestion throughput.
+- **Document Identification & Upserts**: Hashes document location URIs to generate deterministic, unique document IDs. Ingestion uses upsert operations to update existing records across re-indexing runs and maintain data consistency.
+
+### Query Translation & Blended Search
+
+The module translates Backstage `SearchQuery` objects into Discovery Engine API requests:
+
+- **Query Execution**: Routes search requests to the appropriate App Engine based on query parameters. Single-category queries target the specific engine configured for that document type, while multi-category or global queries use the blended search engine configuration.
+- **Filter Mapping**: Translates Backstage filter objects into Discovery Engine filter expressions for structured field matching.
