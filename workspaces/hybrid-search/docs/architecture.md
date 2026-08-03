@@ -416,29 +416,17 @@ Vertex AI Search evaluates queries dynamically and returns content at multiple l
 
 ## Section 5: GCS Eventarc Ingestion Webhook Architecture
 
-### Architecture & Prerequisites
+### Architecture
 
 The GCS Eventarc ingestion module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) provides an event-driven webhook ingress that decouples technical documentation search indexing from the Backstage application server.
 
-#### Prerequisites: External TechDocs Compilation & Publishing
-
-Before deploying the GCS Eventarc module, the Backstage portal **must** be configured for external TechDocs site compilation and cloud storage publishing:
-
-1. **TechDocs Backend Plugin (`@backstage/plugin-techdocs-backend`) Configuration**: The Backstage backend configuration (`app-config.yaml`) must set TechDocs to external build mode (`techdocs.builder: external`) and Google Cloud Storage publishing (`techdocs.publisher.type: googleGcs`).
-2. **External CI/CD Build Tooling (`@techdocs/cli`)**: Documentation build jobs in CI/CD pipelines (e.g. GitHub Actions, GitLab CI, or Google Cloud Build) must use `@techdocs/cli` to generate static HTML and publish site manifests:
-   - `techdocs-cli generate` (compiles Markdown to HTML and generates `search_index.json`).
-   - `techdocs-cli publish --publisher-type googleGcs --storage-name <bucket-name>` (uploads the compiled site and manifest to GCS).
-
-**Why External Compilation Is Mandatory**: If TechDocs is configured in local builder mode (`techdocs.builder: local`), MkDocs site builds run directly inside the Backstage backend container, generating files on local disk without publishing to Google Cloud Storage. Because Google Eventarc relies on `google.cloud.storage.object.v1.finalized` storage mutation events in GCS to trigger webhook notifications, external site compilation and GCS publishing via `@techdocs/cli` is a hard prerequisite for event-driven indexing.
-
-#### Decoupled Asynchronous Indexing
-
-While standard Backstage TechDocs with external publishing offloads site compilation to CI/CD pipelines, standard search indexing still relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically download and parse manifest files inside Node.js V8 heap memory.
+While standard Backstage TechDocs supports offloading documentation compilation (MkDocs) to external CI/CD pipelines and publishing static assets to Google Cloud Storage (GCS), standard search indexing still relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically pull and parse manifests inside Node.js V8 heap memory.
 
 The GCS Eventarc module builds upon external TechDocs publishing by introducing **Decoupled Asynchronous Indexing**:
 
+- **External Publishing Prerequisite**: Event-driven indexing strictly requires that documentation sites are compiled and published out-of-band directly to GCS by external build automation. Because Google Eventarc relies on storage object creation events (`google.cloud.storage.object.v1.finalized`) emitted by Cloud Storage, local in-process site compilation (which writes to local container storage) cannot trigger event notifications.
 - **Offloaded Search Indexing**: Rather than executing polling collators inside the Backstage application server process, search index synchronization is offloaded entirely to out-of-band event processing.
-- **Event-Driven Push Synchronization**: Whenever a CI/CD pipeline publishes an updated `search_index.json` to GCS via `techdocs-cli`, a Google Cloud Eventarc trigger fires a lightweight HTTP POST to the `/api/events/gcs` webhook, executing index synchronization asynchronously without V8 heap contention or event loop blocking.
+- **Event-Driven Push Synchronization**: Whenever an external pipeline publishes an updated site manifest to GCS, Google Cloud Eventarc dispatches a lightweight push event to the `/api/events/gcs` webhook, executing index synchronization asynchronously without V8 heap contention or event loop blocking.
 
 ### Webhook Ingress & Execution Flow
 
