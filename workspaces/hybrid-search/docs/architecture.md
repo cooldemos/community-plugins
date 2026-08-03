@@ -473,12 +473,12 @@ The module exposes a dedicated HTTP webhook endpoint mounted on the Backstage ev
 
 ### Catalog Metadata Enrichment
 
-Raw documentation manifests produced by site generators contain page titles and text, but lack portal context such as team ownership, component lifecycle, or authorization controls.
+Documentation manifests emitted by static site generators contain raw page titles and section text, but lack enterprise portal context. Without catalog metadata, search backends cannot enforce access permissions or support faceted filtering across organizational hierarchies.
 
-When processing an incoming documentation site, the background worker queries the Catalog Service to resolve the parent entity (such as `component:default/auth-service`). It then enriches every document page before indexing:
+When processing an incoming manifest, the background worker queries the Backstage Catalog Service (`CatalogService`) to resolve the target component's parent entity. It then enriches every document record before ingestion:
 
-- **Entity Metadata Enrichment**: Attaches team ownership, lifecycle, component type, and annotation metadata to enable faceted search filtering on the portal UI.
-- **Authorization Reference Enrichment**: Attaches the parent entity reference as an authorization resource tag to support downstream access control.
+- **Entity Metadata**: Attaches team ownership, lifecycle stage, component type, and custom annotations to support faceted filtering and taxonomy navigation in the search portal.
+- **Authorization Context**: Binds the canonical parent entity reference (`<kind>:<namespace>/<name>`) as a resource tag to enable downstream permission checks.
 
 ### Deterministic Path Hashing
 
