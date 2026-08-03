@@ -305,3 +305,7 @@ The module converts Backstage search queries into native Typesense API requests:
 
 - **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for category and metadata queries.
 - **Document Identification**: Derives a stable document ID from a document's location URI when an explicit ID is missing, using `upsert` mode during ingestion to overwrite existing records and prevent duplicates across re-indexing runs.
+
+### Authentication & Cluster Connectivity
+
+Authentication between the search module and the Typesense service is managed via API key authentication (`apiKey`) and cluster node configurations (`nodes`). During module startup, an internal client is instantiated using these configured credentials to secure all collection management, document indexing, and search query operations.
