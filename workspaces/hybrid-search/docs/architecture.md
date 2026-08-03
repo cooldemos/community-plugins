@@ -484,7 +484,7 @@ When processing an incoming manifest, the background worker queries the Backstag
 
 To avoid wiping and rebuilding an entire search index on every update, search backends require stable document identifiers to perform targeted upserts and deletions.
 
-The module constructs deterministic document IDs by hashing normalized relative paths. This ensures that successive builds produce identical IDs for unchanged pages, enabling in-place document updates and precise differential cleanup without full index re-indexing.
+The module constructs deterministic document IDs by hashing normalized relative paths. Because a page's ID depends strictly on its canonical path rather than its content, updating a page modifies the existing document in-place, while deleted pages can be precisely identified and purged without full index re-indexing.
 
 ### Differential Reconciliation
 
