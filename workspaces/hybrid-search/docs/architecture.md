@@ -488,9 +488,9 @@ The module constructs deterministic document IDs by hashing normalized relative 
 
 ### Delta Synchronization & Cleanup
 
-In standard Backstage deployments, pull-based collators execute scheduled bucket scans without tracking historical manifest versions. When documentation pages are deleted or renamed, collators index new manifest items but leave obsolete entries in the search backend, resulting in orphaned "ghost results" that cause 404 errors until the index is wiped and rebuilt.
+In standard Backstage deployments, pull-based collators execute on fixed schedules. Between scans, search results become stale, serving outdated content or leading users to 404 links for deleted pages. Furthermore, because collators process manifests without historical version tracking, deleted or renamed pages persist in the search backend until a full index re-index occurs.
 
-By leveraging GCS storage mutation events and object versioning, the Eventarc webhook eliminates obsolete entries automatically during ingestion through delta synchronization:
+By leveraging GCS storage mutation events and object versioning, the Eventarc webhook triggers instant synchronization on publish and automatically purges obsolete entries through delta calculation:
 
 1. **Manifest Inspection**: When a new site manifest is published (Generation $N$), the background worker parses active pages and compiles the current document set.
 2. **Historical Version Fetching**: Using GCS object versioning, the worker retrieves the preceding manifest (Generation $N-1$) to build the historical document set.
