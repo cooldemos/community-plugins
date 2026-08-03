@@ -475,10 +475,10 @@ The module exposes a dedicated HTTP webhook endpoint mounted on the Backstage ev
 
 Raw documentation manifests produced by site generators contain page titles and text, but lack portal context such as team ownership, component lifecycle, or authorization controls.
 
-When processing an incoming documentation site (e.g., `default/component/auth-service/search_index.json`), the background worker queries the Backstage Catalog Service (`CatalogService`) to resolve the parent entity (`Component:default/auth-service`). It then enriches every document page before indexing:
+When processing an incoming documentation site, the background worker queries the Catalog Service to resolve the parent entity (such as `component:default/auth-service`). It then enriches every document page before indexing:
 
-- **Entity Metadata Enrichment**: Attaches `owner` (`spec.owner`), `lifecycle` (`spec.lifecycle`), `componentType` (`spec.type`), and `annotations` (`metadata.annotations`) to enable faceted search filtering on the portal UI.
-- **Authorization Reference Enrichment**: Attaches the parent entity reference (`component:default/auth-service`) as an authorization resource tag to support downstream access control.
+- **Entity Metadata Enrichment**: Attaches team ownership, lifecycle, component type, and annotation metadata to enable faceted search filtering on the portal UI.
+- **Authorization Reference Enrichment**: Attaches the parent entity reference as an authorization resource tag to support downstream access control.
 
 ### Deterministic Path Hashing
 
