@@ -462,7 +462,7 @@ The module exposes a dedicated HTTP webhook endpoint mounted on the Backstage ev
 1. **Storage Event Emission**: When a CI/CD pipeline uploads `search_index.json` to GCS, Cloud Storage emits a `google.cloud.storage.object.v1.finalized` event containing the target bucket name, object path, and generation ID ($N$).
 2. **Eventarc Routing**: Google Cloud Eventarc intercepts the storage event and delivers an HTTP POST request to `/api/events/gcs`.
 3. **Webhook Authentication & Acknowledgment**: The webhook endpoint authenticates the incoming request (verifying Google OIDC ID tokens when enabled), validates payload structure, acknowledges receipt immediately to Eventarc with HTTP 200 OK, and dispatches a background event (`gcs-notifications`) to the internal event bus. User HTTP traffic on the portal server is never blocked.
-4. **Asynchronous Background Processing**: The background worker downloads the manifest, enriches documents, and synchronizes the search index out-of-band.
+4. **Asynchronous Background Processing**: The background worker downloads the manifest, enriches each document page with Software Catalog metadata (attaching team ownership, component lifecycle, entity type, and access control tags), and synchronizes the search index out-of-band.
 
 ### Catalog Metadata Enrichment
 
