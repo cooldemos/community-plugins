@@ -291,6 +291,14 @@ The Typesense module supports two distinct operational modes depending on portal
 
 - **Hybrid Sub-Engine Mode (Router Integration)**: Registers into `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
 
+### Authentication Mechanics
+
+Authentication between the search module and the external Typesense service is secured using API key credentials (`apiKey`). The module passes this key during client initialization to authenticate all collection management, document indexing streams, and search query API calls.
+
+### Cluster Connectivity & High Availability
+
+Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path for a cluster instance. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable during operation.
+
 ### Schema & Indexing Mechanics
 
 Typesense organizes documents into collections, which require a defined schema before documents can be inserted. The Typesense search module manages collection setup automatically as Backstage collators run.
@@ -305,11 +313,3 @@ The module converts Backstage search queries into native Typesense API requests:
 
 - **Filter Conversion**: Translates Backstage filter objects into Typesense `filter_by` boolean expressions for category and metadata queries.
 - **Document Identification**: Derives a stable document ID from a document's location URI when an explicit ID is missing, using `upsert` mode during ingestion to overwrite existing records and prevent duplicates across re-indexing runs.
-
-### Authentication Mechanics
-
-Authentication between the search module and the external Typesense service is secured using API key credentials (`apiKey`). The module passes this key during client initialization to authenticate all collection management, document indexing streams, and search query API calls.
-
-### Cluster Connectivity & High Availability
-
-Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path for a cluster instance. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable during operation.
