@@ -153,11 +153,11 @@ While standard Backstage search provides a simple baseline for small portal inst
 
 ## Section 1: Backend Modules Architecture
 
-The Hybrid Search Workspace is architected as four modular, loosely coupled backend packages designed for Backstage's New Backend System (`@backstage/backend-plugin-api`). Each package encapsulates a distinct architectural responsibility within the query routing and document ingestion ecosystem:
+The Hybrid Search Workspace is architected as four modular, backend packages designed for Backstage's New Backend System (`@backstage/backend-plugin-api`). Each package encapsulates a distinct architectural responsibility:
 
 - **`@backstage-community/plugin-search-backend-module-hybrid`**: Top-level federated query router and extension point registry. Intercepts search requests, routes queries to mapped sub-engines based on document type, manages parallel fan-out, and normalizes result scores across heterogeneous engines.
-- **`@backstage-community/plugin-search-backend-module-typesense`**: Search engine module backed by Typesense.
-- **`@backstage-community/plugin-search-backend-module-vertexai`**: Search engine module backed by Google Vertex AI Search.
+- **`@backstage-community/plugin-search-backend-module-typesense`**: Search engine module backed by Typesense, an open-source, fast in-memory search engine optimized for typo-tolerant keyword matching, structured metadata filtering, and vector search.
+- **`@backstage-community/plugin-search-backend-module-vertexai`**: Search engine module backed by Google Cloud Vertex AI Search, a managed enterprise search service providing semantic vector retrieval, natural language understanding, and LLM-powered extractive answers.
 - **`@backstage-community/plugin-events-backend-module-gcs-eventarc`**: Event-driven asynchronous ingestion webhook module (`/api/events/gcs`) used exclusively with the Vertex AI Search backend search module.
 
 ## Section 2: Federated Multi-Engine Search Routing
