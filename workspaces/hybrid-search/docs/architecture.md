@@ -486,11 +486,11 @@ To avoid wiping and rebuilding an entire search index on every update, search ba
 
 The module constructs deterministic document IDs by hashing normalized relative paths. Because a page's ID depends strictly on its canonical path rather than its content, updating a page modifies the existing document in-place, while deleted pages can be precisely identified and purged without full index re-indexing.
 
-### Differential Reconciliation
+### Delta Synchronization & Cleanup
 
 Traditional search indexers operate as append-only processes, leaving deleted or renamed documentation pages in the search index as broken links.
 
-The GCS Eventarc module resolves this through differential reconciliation:
+The GCS Eventarc module resolves this through delta synchronization:
 
 1. **Manifest Inspection**: When a new site manifest is published (Generation $N$), the background worker parses active pages and compiles the current document set.
 2. **Historical Version Fetching**: Using GCS object versioning, the worker retrieves the preceding manifest (Generation $N-1$) to build the historical document set.
