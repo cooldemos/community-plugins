@@ -635,11 +635,17 @@ search:
 
 Deploying Vertex AI Search in standalone mode binds `@backstage-community/plugin-search-backend-module-vertexai` as the primary search engine for all Backstage document types.
 
+### Global Blended Search Architecture (`blendedSearch`)
+
+In standalone mode, Backstage homepage queries execute across multiple document categories (e.g. searching across both `techdocs` and `software-catalog` simultaneously). To support multi-category search without deploying an external router, Google Cloud Vertex AI Search uses a **Global Blended Search App**.
+
+- **Multi-Datastore Consolidation**: The Blended Search App links all individual per-type Data Stores into a unified Search Engine. The Google Cloud Discovery Engine API queries all linked Data Stores in parallel and returns a unified, ranked result list.
+- **Standalone Requirement**: The `blendedSearch` block in `app-config.yaml` is **mandatory** when operating in standalone mode.
+- **Hybrid Router Conflict**: In a Hybrid Search Router setup (Section 3), `blendedSearch` **must be omitted**. Query blending across engines is managed by the Backstage Hybrid Search Router itself; configuring `blendedSearch` in hybrid mode results in a startup configuration error.
+
 ### Base GCP Infrastructure Provisioning (Terraform)
 
-Regardless of whether ingestion runs via in-process collators (Option A) or offloaded pipelines (Option B), the underlying Google Cloud Discovery Engine Data Stores and Schemas must be provisioned in Google Cloud using Terraform for each Backstage content type (e.g. `techdocs`, `software-catalog`). Optionally, a dedicated Search App Engine can also be provisioned per Data Store if custom query tuning or boost rules are needed.
-
-The blueprint below illustrates provisioning the Data Store and schema for the `techdocs` content type:
+Regardless of whether ingestion runs via in-process collators (Option A) or offloaded pipelines (Option B), the underlying Google Cloud Discovery Engine Data Stores and Schemas must be provisioned in Google Cloud using Terraform for each Backstage content type (e.g. `techdocs`, `software-catalog`). Additionally, a **Global Blended Search App** linking all Data Stores must be provisioned for standalone portal-wide queries.
 
 ```hcl
 # 1. Provision Vertex AI Search Data Store for TechDocs
@@ -653,7 +659,7 @@ resource "google_discovery_engine_data_store" "techdocs_datastore" {
   create_advanced_site_search = false
 }
 
-# 2. Provision Semi-Dynamic Schema for Data Store (Auto-Discovery Enabled)
+# 2. Provision Semi-Dynamic Schema for TechDocs Data Store
 resource "google_discovery_engine_schema" "techdocs_schema" {
   location      = google_discovery_engine_data_store.techdocs_datastore.location
   data_store_id = google_discovery_engine_data_store.techdocs_datastore.data_store_id
@@ -676,8 +682,35 @@ resource "google_discovery_engine_schema" "techdocs_schema" {
   })
 }
 
-# 3. Provision Vertex AI Search App Engine (Optional - only required if dedicated query tuning or boost rules are needed)
-resource "google_discovery_engine_search_engine" "techdocs_engine" {
+# 3. Provision Vertex AI Search Data Store for Software Catalog
+resource "google_discovery_engine_data_store" "catalog_datastore" {
+  location                    = "global"
+  data_store_id               = "catalog-datastore"
+  display_name                = "Backstage Catalog Data Store"
+  industry_vertical           = "GENERIC"
+  solution_types              = ["SOLUTION_TYPE_SEARCH"]
+  content_config              = "NO_CONTENT"
+  create_advanced_site_search = false
+}
+
+# 4. Provision Global Blended Search App (Required for Standalone Mode portal-wide queries)
+resource "google_discovery_engine_search_engine" "blended_search_engine" {
+  engine_id      = "backstage-global-search-app"
+  collection_id  = "default_collection"
+  location       = "global"
+  display_name   = "Backstage Global Blended Search App"
+  data_store_ids = [
+    google_discovery_engine_data_store.techdocs_datastore.data_store_id,
+    google_discovery_engine_data_store.catalog_datastore.data_store_id,
+  ]
+
+  search_engine_config {
+    search_tier = "SEARCH_TIER_STANDARD"
+  }
+}
+
+# 5. Provision Dedicated Search App Engine per Data Store (Optional - for custom query tuning/boosts)
+resource "google_discovery_engine_search_engine" "techdocs_dedicated_engine" {
   engine_id      = "techdocs-search-app"
   collection_id  = "default_collection"
   location       = google_discovery_engine_data_store.techdocs_datastore.location
@@ -736,6 +769,17 @@ Configure direct collator ingestion in `app-config.yaml`:
 search:
   engines:
     vertexai:
+      # MANDATORY for Standalone Mode: Global Blended Search App for portal-wide queries
+      blendedSearch:
+        projectId: my-gcp-project-id
+        location: global
+        engineId: backstage-global-search-app
+        searchOptions:
+          contentSearchSpec:
+            extractiveContentSpec:
+              maxExtractiveAnswerCount: 1
+              maxExtractiveSegmentCount: 2
+
       types:
         techdocs:
           indexing:
