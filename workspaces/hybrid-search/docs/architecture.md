@@ -308,4 +308,6 @@ The module converts Backstage search queries into native Typesense API requests:
 
 ### Authentication & Cluster Connectivity
 
-Authentication between the search module and the Typesense service is managed via API key authentication (`apiKey`) and cluster node configurations (`nodes`). During module startup, an internal client is instantiated using these configured credentials to secure all collection management, document indexing, and search query operations.
+Authentication between the search module and the Typesense service is secured via API key authentication (`apiKey`).
+
+To support high-availability production deployments, connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional URL path. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across Typesense cluster nodes if a node becomes unavailable during indexing or search requests.
