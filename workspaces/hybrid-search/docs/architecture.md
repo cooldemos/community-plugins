@@ -285,11 +285,11 @@ The module is designed to eliminate the scaling and heap memory limitations of B
 
 ### Operational Modes: Standalone vs. Hybrid Integration
 
-To support diverse deployment requirements, the Typesense module is architected with dual-mode registration capabilities:
+The Typesense module supports two distinct operational modes depending on portal deployment requirements:
 
-- **Standalone Mode (Primary Search Engine)**: The module registers directly with Backstage's core search plugin (`searchEngineRegistryExtensionPoint`) as the sole primary search engine for the entire developer portal. In this standalone configuration, all document indexing streams and query executions across all portal document categories flow directly through Typesense.
+- **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the single search engine for the portal. All collator indexing streams and search queries across all document categories are handled exclusively by Typesense.
 
-- **Hybrid Sub-Engine Mode (Router Integration)**: The module registers with the hybrid orchestrator (`hybridSearchEngineRegistryExtensionPoint`) as a specialized sub-engine. In this mode, Typesense handles designated document categories while operating alongside complementary search backends like, for instance, Vertex AI Search.
+- **Hybrid Sub-Engine Mode (Router Integration)**: Registers into `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
 
 ### Schema & Indexing Mechanics
 
