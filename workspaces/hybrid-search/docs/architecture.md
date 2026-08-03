@@ -661,6 +661,7 @@ locals {
       display_name         = "Backstage Catalog Store"
       create_dedicated_app = false # Uses global blended Search App
     }
+    # Other document types here
   }
 }
 
@@ -693,14 +694,14 @@ resource "google_discovery_engine_schema" "backstage_schema" {
     type      = "object"
     dynamic   = "true"
     properties = {
-      title     = { type = "string", keyPropertyMapping = "title", retrievable = true }
-      text      = { type = "string", keyPropertyMapping = "description", retrievable = true }
-      location  = { type = "string", indexable = true, retrievable = true }
-      kind      = { type = "string", indexable = true, retrievable = true }
-      namespace = { type = "string", indexable = true, retrievable = true }
-      name      = { type = "string", indexable = true, retrievable = true }
-      owner     = { type = "string", indexable = true, retrievable = true }
-      lifecycle = { type = "string", indexable = true, retrievable = true }
+      title         = { type = "string", keyPropertyMapping = "title", retrievable = true }
+      text          = { type = "string", keyPropertyMapping = "description", retrievable = true }
+      kind          = { type = "string", indexable = true, retrievable = true }
+      namespace     = { type = "string", indexable = true, retrievable = true }
+      location      = { type = "string", indexable = true, retrievable = true }
+      owner         = { type = "string", indexable = true, retrievable = true }
+      lifecycle     = { type = "string", indexable = true, retrievable = true }
+      componentType = { type = "string", indexable = true, retrievable = true }
     }
   })
 }
