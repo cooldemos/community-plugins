@@ -418,15 +418,14 @@ Vertex AI Search evaluates queries dynamically and returns content at multiple l
 
 ### Architecture
 
-The GCS Eventarc ingestion module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) provides an event-driven webhook ingress that decouples technical documentation search indexing from the Backstage application server.
+The GCS Eventarc module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) replaces Backstage's default pull-based TechDocs indexer with an event-driven ingestion pipeline.
 
-While standard Backstage TechDocs supports offloading documentation compilation (MkDocs) to external CI/CD pipelines and publishing static assets to Google Cloud Storage (GCS), standard search indexing still relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically pull and parse manifests inside Node.js V8 heap memory.
+In standard Backstage deployments, TechDocs supports external site compilation—where CI/CD pipelines build static HTML and `search_index.json` manifests before uploading them to Google Cloud Storage (GCS). However, indexing those manifests into search backends still relies on in-process collators (`DefaultTechDocsCollatorFactory`) running inside the Node.js application server. These collators poll storage buckets on fixed schedules, downloading and parsing JSON manifests inside V8 heap memory.
 
-The GCS Eventarc module builds upon external TechDocs publishing by introducing **Decoupled Asynchronous Indexing**:
+The Eventarc module shifts index synchronization from scheduled polling to event-driven push processing:
 
-- **External Publishing Prerequisite**: Event-driven indexing strictly requires that documentation sites are compiled and published out-of-band directly to GCS by external build automation. Because Google Eventarc relies on storage object creation events (`google.cloud.storage.object.v1.finalized`) emitted by Cloud Storage, local in-process site compilation (which writes to local container storage) cannot trigger event notifications.
-- **Offloaded Search Indexing**: Rather than executing polling collators inside the Backstage application server process, search index synchronization is offloaded entirely to out-of-band event processing.
-- **Event-Driven Push Synchronization**: Whenever an external pipeline publishes an updated site manifest to GCS, Google Cloud Eventarc dispatches a lightweight push event to the `/api/events/gcs` webhook, executing index synchronization asynchronously without V8 heap contention or event loop blocking.
+- External compilation is a strict prerequisite. The pipeline relies on `google.cloud.storage.object.v1.finalized` events emitted by GCS when a new `search_index.json` object is written. Local, in-process documentation builds write directly to container disk, bypassing GCS and preventing Eventarc triggers from firing.
+- Indexing is triggered instantly when documentation is published. When Cloud Storage receives an updated site manifest from CI/CD, Eventarc delivers a webhook payload to `/api/events/gcs`, initiating index synchronization out-of-band without blocking the application server or running recurring background polling loops.
 
 ### Webhook Ingress & Execution Flow
 
