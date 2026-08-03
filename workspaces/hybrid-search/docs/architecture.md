@@ -480,7 +480,7 @@ When processing an incoming manifest, the background worker queries the Backstag
 - **Entity Metadata**: Attaches team ownership, lifecycle stage, component type, and custom annotations to support faceted filtering and taxonomy navigation in the search portal.
 - **Authorization Context**: Binds the canonical parent entity reference (`<kind>:<namespace>/<name>`) as a resource tag to enable downstream permission checks.
 
-### Deterministic Path Hashing
+### Stable Document Identification
 
 To avoid wiping and rebuilding an entire search index on every update, search backends require stable document identifiers to perform targeted upserts and deletions.
 
