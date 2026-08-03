@@ -336,7 +336,7 @@ In Vertex AI Search, data storage and query execution are decoupled:
 - **Data Stores**: Represent storage containers for indexed documents. Each document type is configured with a target GCP project ID, region/location (such as `global` or `europe-west4`), and Data Store ID (`datastoreId`).
 - **App Engines**: Represent query-serving endpoints built over one or more Data Stores. The module supports per-type engines for category-specific search and a global blended search app engine (`blendedSearch`) that queries across multiple Data Stores for unified multi-category requests.
 
-Authentication and request routing rely on Google Cloud Application Default Credentials (ADC) and regional API endpoints (`<location>-discoveryengine.googleapis.com`).
+Authentication and request routing rely on Google Cloud Application Default Credentials (ADC) and location-aware API endpoints (using global endpoints or location-prefixed routes such as `<location>-discoveryengine.googleapis.com`).
 
 ### Schema & Document Indexing
 
