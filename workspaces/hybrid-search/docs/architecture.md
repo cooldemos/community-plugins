@@ -340,10 +340,11 @@ Authentication and request routing rely on Google Cloud Application Default Cred
 
 ### Schema & Document Indexing
 
-The module streams index documents directly into Google Cloud Data Stores via an internal write stream:
+Document ingestion into Vertex AI Search Data Stores is configurable per document type via two operational indexing modes:
 
-- **Inline Batch Ingestion**: Buffers collator document streams into memory and flushes them in bulk payloads (up to 100 documents) directly to Discovery Engine using inline imports, bypassing the need for intermediate staging in Google Cloud Storage. Optional throttling delays (`throttleMs`) allow controlling ingestion throughput.
-- **Document Identification & Upserts**: Hashes document location URIs to generate deterministic, unique document IDs. Ingestion uses upsert operations to update existing records across re-indexing runs and maintain data consistency.
+- **Direct Ingestion Mode (`indexing.enabled: true`)**: Backstage collators stream index documents directly to the target Data Store. The module returns a custom `VertexAIWritableStream` that flushes buffered document payloads in bulk batches (up to 100 items with optional throttling delays) directly via Discovery Engine inline imports. Location URIs are SHA-256 hashed to derive deterministic document IDs for upserts across re-indexing runs. Direct indexing is mandatory for core software catalog entities (`software-catalog`) to maintain catalog search integrity.
+
+- **Bypassed Ingestion Mode (`indexing.enabled: false`)**: Local collator indexing in Backstage is completely bypassed by returning a dummy no-op stream. Ingestion is offloaded to external, asynchronous pipelines (such as GCS file uploads, EventArc automation, or scheduled batch jobs) that populate the GCP Data Store directly out-of-band. This mode prevents high CPU and memory resource consumption on the Backstage Node.js instance when processing large documentation suites.
 
 ### Query Translation & Blended Search
 
