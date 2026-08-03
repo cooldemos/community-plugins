@@ -170,7 +170,7 @@ Standard Backstage search uses a single-engine extension point (`searchEngineReg
 
 This extension point pattern enables a flexible, open-ended search architecture:
 
-- **Dynamic Engine Discovery**: Domain-specific search modules (such as Typesense or Vertex AI Search) register automatically with the hybrid router at startup without hardcoded dependencies between packages.
+- **Dynamic Engine Discovery**: Search engine modules (such as Typesense or Vertex AI Search) register automatically with the hybrid router at startup without hardcoded dependencies between packages.
 - **Pluggable Sub-Engine Ecosystem**: Platform teams can integrate custom or third-party search engines by creating lightweight backend modules that register against the hybrid extension point.
 
 ### Query Routing & Dispatch
