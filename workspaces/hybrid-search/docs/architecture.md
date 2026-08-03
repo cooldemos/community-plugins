@@ -637,7 +637,7 @@ Deploying Vertex AI Search in standalone mode binds `@backstage-community/plugin
 
 ### Global Blended Search Architecture (`blendedSearch`)
 
-In standalone mode, Backstage homepage queries execute across multiple document categories (e.g. searching across both `techdocs` and `software-catalog` simultaneously). To support multi-category search without deploying an external router, Google Cloud Vertex AI Search uses a **Global Blended Search App**.
+In standalone mode, Backstage homepage queries execute across multiple document categories (e.g. searching across both `techdocs` and `software-catalog` simultaneously). To support multi-category search, Google Cloud Vertex AI Search uses a **Global Blended Search App**.
 
 - **Multi-Datastore Consolidation**: The Blended Search App links all individual per-type Data Stores into a unified Search Engine. The Google Cloud Discovery Engine API queries all linked Data Stores in parallel and returns a unified, ranked result list.
 - **Standalone Requirement**: The `blendedSearch` block in `app-config.yaml` is **mandatory** when operating in standalone mode.
@@ -667,7 +667,7 @@ locals {
 
 # ============================================================================
 # 1. BASE DATA STORES & SCHEMAS (REQUIRED for all deployment modes)
-# Dynamically provisions one Data Store & schema per configured content type.
+# Provisions one datastore & schema per configured content type.
 # ============================================================================
 
 resource "google_discovery_engine_data_store" "backstage" {
@@ -708,8 +708,8 @@ resource "google_discovery_engine_schema" "backstage_schema" {
 
 # ============================================================================
 # 2. GLOBAL BLENDED SEARCH APP
-# REQUIRED for Standalone Mode (Section 2) portal-wide homepage search.
-# OMIT in Hybrid Search Router Mode (Section 3) to avoid config errors.
+# REQUIRED for Standalone Mode portal-wide homepage search.
+# OMIT in Hybrid Search Router Mode to avoid config errors.
 # ============================================================================
 
 resource "google_discovery_engine_search_engine" "blended_search_engine" {
@@ -765,8 +765,8 @@ resource "google_storage_bucket_iam_member" "backstage_techdocs_gcs" {
 
 # ============================================================================
 # 5. EVENTARC PIPELINE RESOURCES
-# REQUIRED ONLY for Option B (Decoupled Eventarc Ingestion & Cleanup Sweeper).
-# OMIT if using Option A (Direct Collator Ingestion).
+# REQUIRED if decoupled Eventarc ingestion.
+# OMIT if using direct Collator ingestion.
 # ============================================================================
 
 # Eventarc Trigger Service Account
@@ -832,11 +832,11 @@ resource "google_eventarc_google_channel_config" "cmek_config" {
 }
 ```
 
-### Option A – Direct Collator Ingestion Mode (`indexing.enabled: true`)
+### Option A – Direct Collator Ingestion Mode
 
 In direct ingestion mode, Backstage collators run inside the Node.js backend and push document streams directly into Google Cloud Discovery Engine API endpoints using batch inline imports (up to 100 items per payload).
 
-#### 1. Backend Module Registration
+#### Backend Module Registration
 
 Register only the Vertex AI Search module (`@backstage-community/plugin-search-backend-module-vertexai`) in `packages/backend/src/index.ts`:
 
@@ -856,7 +856,7 @@ backend.add(
 backend.start();
 ```
 
-#### 2. Application Configuration
+#### Application Configuration
 
 Configure direct collator ingestion in `app-config.yaml`:
 
@@ -898,11 +898,11 @@ search:
             location: global
 ```
 
-### Option B – Decoupled Eventarc Ingestion & Cleanup Sweeper Mode (`indexing.enabled: false`)
+### Option B – Decoupled Eventarc Ingestion
 
-To prevent Node.js V8 memory strain during documentation builds, local collator indexing is completely bypassed for TechDocs by setting `indexing.enabled: false`. Ingestion is offloaded to CI/CD pipelines publishing to Google Cloud Storage (GCS), triggering real-time index updates via Eventarc notifications while maintaining index consistency via the background `techdocs-orphan-sweeper` task.
+To prevent Node.js V8 memory strain during documentation builds, local collator indexing is completely bypassed for TechDocs by setting `indexing.enabled: false`. Ingestion is offloaded to CI/CD pipelines publishing to Google Cloud Storage (GCS), triggering real-time index updates via Eventarc notifications. When entities disappear from the catalog, the background `techdocs-orphan-sweeper` task maintains index consistency by automatically cleaning up the corresponding orphaned documentation files from both GCS and the Vertex AI Search datastore.
 
-#### 1. Backend Module Registration
+#### Backend Module Registration
 
 Register both the Vertex AI Search module (`@backstage-community/plugin-search-backend-module-vertexai`) and the GCS Eventarc webhook module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) in `packages/backend/src/index.ts`:
 
@@ -927,7 +927,7 @@ backend.add(
 backend.start();
 ```
 
-#### 2. Application Configuration
+#### Application Configuration
 
 Configure offloaded TechDocs ingestion and catalog orphan cleanup in `app-config.yaml`:
 
@@ -971,23 +971,30 @@ search:
 
 ##### Parameter Reference Matrix
 
-| Parameter                                | Type / Required       | Default           | Description                                                                                                        |
-| :--------------------------------------- | :-------------------- | :---------------- | :----------------------------------------------------------------------------------------------------------------- |
-| **`types.<type>.datastore.projectId`**   | `string` (Required)   | –                 | Target GCP Project ID hosting the Vertex AI Search Data Store.                                                     |
-| **`types.<type>.datastore.datastoreId`** | `string` (Required)   | –                 | Target Discovery Engine Data Store ID storing indexed documents.                                                   |
-| **`types.<type>.datastore.location`**    | `string` (Optional)   | `'global'`        | Regional location of the Data Store (`'global'`, `'us'`, `'eu'`, `'europe-west4'`).                                |
-| **`types.<type>.engine.projectId`**      | `string` (Optional)   | Same as datastore | GCP Project ID hosting the Search App Engine.                                                                      |
-| **`types.<type>.engine.engineId`**       | `string` (Optional)   | –                 | Search App Engine ID for custom serving configs, tuning rules, and boost controls.                                 |
-| **`types.<type>.engine.location`**       | `string` (Optional)   | Same as datastore | Regional location of the Search App Engine.                                                                        |
-| **`types.<type>.indexing.enabled`**      | `boolean` (Optional)  | `true`            | Controls in-process collator streaming (`true` for direct ingestion; `false` when using GCS Eventarc webhook).     |
-| **`types.<type>.indexing.batchSize`**    | `number` (Optional)   | `100`             | Maximum number of documents per inline import payload to Discovery Engine API (max 100).                           |
-| **`types.<type>.indexing.throttleMs`**   | `number` (Optional)   | `0`               | Delay in milliseconds between inline batch uploads to throttle ingestion rate.                                     |
-| **`types.<type>.searchOptions`**         | `object` (Optional)   | –                 | Raw query options passed directly to Discovery Engine search client call (`servingConfig`, `filter`, `boostSpec`). |
-| **`blendedSearch`**                      | `object` (Optional)   | –                 | Multi-type global blended search engine configuration (`projectId`, `location`, `engineId`, `searchOptions`).      |
-| **`cleanup.enabled`**                    | `boolean` (Optional)  | `true`            | Enables periodic `techdocs-orphan-sweeper` background task to purge deleted catalog documents from GCP.            |
-| **`cleanup.frequency`**                  | `Duration` (Optional) | `{ hours: 2 }`    | Frequency schedule for running the catalog orphan reconciliation task (`hours`, `minutes`, `seconds`).             |
+| Parameter                                | Type / Required       | Default           | Description                                                                                                       |
+| :--------------------------------------- | :-------------------- | :---------------- | :---------------------------------------------------------------------------------------------------------------- |
+| **`blendedSearch.projectId`**            | `string` (Required)   | –                 | GCP Project ID hosting the global blended Search App Engine (Standalone Mode).                                    |
+| **`blendedSearch.location`**             | `string` (Required)   | `'global'`        | Regional location of the global blended Search App Engine (`'global'`, `'us'`, `'eu'`, `'europe-west4'`).         |
+| **`blendedSearch.engineId`**             | `string` (Required)   | –                 | Search App Engine ID for multi-type global blended search.                                                        |
+| **`blendedSearch.searchOptions`**        | `object` (Optional)   | –                 | Raw query options passed to Discovery Engine blended search calls (`servingConfig`, `filter`, `boostSpec`).       |
+| **`types.<type>.datastore.projectId`**   | `string` (Required)   | –                 | Target GCP Project ID hosting the Vertex AI Search Data Store.                                                    |
+| **`types.<type>.datastore.datastoreId`** | `string` (Required)   | –                 | Target Discovery Engine Data Store ID storing indexed documents.                                                  |
+| **`types.<type>.datastore.location`**    | `string` (Optional)   | `'global'`        | Regional location of the Data Store (`'global'`, `'us'`, `'eu'`, `'europe-west4'`).                               |
+| **`types.<type>.engine.projectId`**      | `string` (Optional)   | Same as datastore | GCP Project ID hosting the dedicated Search App Engine.                                                           |
+| **`types.<type>.engine.engineId`**       | `string` (Optional)   | –                 | Dedicated Search App Engine ID for custom serving configs, tuning rules, and boost controls.                      |
+| **`types.<type>.engine.location`**       | `string` (Optional)   | Same as datastore | Regional location of the dedicated Search App Engine.                                                             |
+| **`types.<type>.indexing.enabled`**      | `boolean` (Optional)  | `true`            | Controls in-process collator streaming (`true` for direct ingestion; `false` when using GCS Eventarc webhook).    |
+| **`types.<type>.indexing.batchSize`**    | `number` (Optional)   | `100`             | Maximum number of documents per inline import payload to Discovery Engine API (1–100).                            |
+| **`types.<type>.indexing.throttleMs`**   | `number` (Optional)   | `0`               | Delay in milliseconds between inline batch uploads to throttle ingestion rate.                                    |
+| **`types.<type>.searchOptions`**         | `object` (Optional)   | –                 | Type-specific raw query options passed to Discovery Engine search client calls (`servingConfig`, `filter`, etc.). |
+| **`indexing.enabled`**                   | `boolean` (Optional)  | `true`            | Global default setting for in-process collator streaming across all document types.                               |
+| **`indexing.batchSize`**                 | `number` (Optional)   | `100`             | Global default inline batch upload size across all document types (1–100).                                        |
+| **`indexing.throttleMs`**                | `number` (Optional)   | `0`               | Global default delay in milliseconds between inline batch uploads.                                                |
+| **`cleanup.enabled`**                    | `boolean` (Optional)  | `true`            | Enables periodic `techdocs-orphan-sweeper` background task to purge deleted catalog documents from GCP.           |
+| **`cleanup.frequency`**                  | `Duration` (Optional) | `{ hours: 2 }`    | Frequency schedule for running the catalog orphan reconciliation task (`hours`, `minutes`, `seconds`).            |
+| **`cleanup.initialDelay`**               | `Duration` (Optional) | `{ minutes: 2 }`  | Startup delay before executing the initial catalog orphan reconciliation task (`minutes`, `seconds`).             |
 
-#### 3. Pub/Sub Dead-Letter Queue (DLQ) Operational Configuration
+#### Pub/Sub Dead-Letter Queue (DLQ) Operational Configuration
 
 Configure a Pub/Sub Dead-Letter Queue (DLQ) to preserve failed notifications during backend downtime:
 
@@ -1078,11 +1085,12 @@ search:
 
 ##### Parameter Reference Matrix
 
-| Parameter                | Type / Required     | Default                   | Description                                                                                                                                            |
-| :----------------------- | :------------------ | :------------------------ | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`mergeStrategy`**      | `string` (Optional) | `'score-normalized-sort'` | Federated result consolidation algorithm: `'score-normalized-sort'` (recommended relative score scaling) or `'interleave'` (round-robin rank merging). |
-| **`routing.<category>`** | `string` (Required) | –                         | Maps document category strings (`software-catalog`, `techdocs`) to registered sub-engine identifiers (`typesense`, `vertexai`).                        |
-| **`routing.default`**    | `string` (Required) | –                         | Fallback sub-engine identifier for queries targeting unmapped document categories.                                                                     |
+| Parameter             | Type / Required     | Default        | Description                                                                                                                                            |
+| :-------------------- | :------------------ | :------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`search.engine`**   | `string` (Required) | –              | Must be set to `'hybrid'` in `app-config.yaml` to activate the Hybrid Search Router as the primary backend search engine.                              |
+| **`mergeStrategy`**   | `string` (Optional) | `'interleave'` | Federated result consolidation algorithm: `'score-normalized-sort'` (recommended relative score scaling) or `'interleave'` (round-robin rank merging). |
+| **`routing.<type>`**  | `string` (Required) | –              | Maps Backstage document type/category strings (`software-catalog`, `techdocs`) to registered sub-engine identifiers (`typesense`, `vertexai`).         |
+| **`routing.default`** | `string` (Required) | –              | Fallback sub-engine identifier for queries targeting unmapped document types/categories.                                                               |
 
 ---
 
@@ -1090,7 +1098,7 @@ search:
 
 Custom search sub-engines extend the hybrid router by implementing Backstage's `SearchEngine` interface and registering via `hybridSearchEngineRegistryExtensionPoint`.
 
-### 1. Implementing the `SearchEngine` Interface
+### Implementing the `SearchEngine` Interface
 
 Author a custom engine class extending Backstage's `SearchEngine` abstract class:
 
@@ -1124,9 +1132,9 @@ export class CustomVectorSearchEngine extends SearchEngine {
 }
 ```
 
-### 2. Registering via Extension Point
+### Registering via Extension Point
 
-Author a New Backend System module (`createBackendModule`) that injects the custom engine into `hybridSearchEngineRegistryExtensionPoint`:
+Author a new backend system module (`createBackendModule`) that injects the custom engine into `hybridSearchEngineRegistryExtensionPoint`:
 
 ```typescript
 import { createBackendModule } from '@backstage/backend-plugin-api';
@@ -1151,32 +1159,13 @@ export const customSearchModule = createBackendModule({
 });
 ```
 
-### 3. Routing Matrix Configuration
-
-Once registered, map custom document categories to `custom-vector` in `app-config.yaml`:
-
-```yaml
-search:
-  engines:
-    hybrid:
-      routing:
-        software-catalog: typesense
-        techdocs: vertexai
-        architecture-decisions: custom-vector
-```
+Once registered, map custom document categories to it in `app-config.yaml`:
 
 ---
 
 ## Section 5: Webhook Networking & Security Hardening
 
 Securing the `/api/events/gcs` webhook path requires aligning network routing constraints with edge security policies.
-
-### Authentication
-
-The GCS Eventarc webhook module supports two authentication models depending on whether notifications are delivered to a public Cloud Run endpoint or a private GKE cluster destination:
-
-- **Cloud Run**: When targeting Cloud Run, OIDC authentication should be enabled (`events.modules.gcsEventarcWebhook.oidc.enabled: true`). Eventarc automatically generates and attaches a signed Google OIDC ID token in the `Authorization: Bearer` request header. The webhook validates token signature, issuer (`https://accounts.google.com`), target audience URL, and service account email before accepting the payload.
-- **Private GKE Destinations**: When targeting GKE services, Eventarc routes events over internal network paths via an in-cluster `gke-forwarder` pod. Because `gke-forwarder` pods deliver traffic internally without generating Google OIDC tokens, OIDC verification must be disabled (`enabled: false`). Security is instead enforced at the network layer.
 
 ### Webhook Parameter Reference Matrix
 
@@ -1189,11 +1178,9 @@ The GCS Eventarc webhook module supports two authentication models depending on 
 | **`events.modules.gcsEventarcWebhook.batchSize`**                | `number` (Optional)         | `100`     | Maximum number of documents imported per batch request to Vertex AI Search (1–100).                        |
 | **`events.modules.gcsEventarcWebhook.payloadSizeLimit`**         | `string` (Optional)         | `'100kb'` | Express body-parser size limit for incoming GCS Eventarc push notifications.                               |
 
-### GKE Port 80 Constraint & Backstage Kubernetes Service Mapping
+### Backstage Kubernetes Service Mapping (Port 80 Constraint)
 
-A critical architectural constraint when deploying Eventarc with GKE destinations is that Google Cloud Eventarc's GKE destination specification hardcodes HTTP event delivery strictly to **port 80** on target Kubernetes `Service` resources. The GCP Eventarc API schema does not support custom target port parameters for GKE destinations.
-
-Because Backstage Node.js backend processes default to listening on container port `7007`, Eventarc's cluster-local forwarder pod cannot reach the backend process directly on port 7007. To bridge this constraint, operators must configure the Kubernetes `Service` manifest for Backstage to expose port 80 mapped to target port 7007:
+Configure the Kubernetes `Service` manifest for Backstage to expose port 80 mapped to container target port 7007:
 
 ```yaml
 apiVersion: v1
