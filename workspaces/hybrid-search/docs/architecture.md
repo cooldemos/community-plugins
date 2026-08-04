@@ -348,16 +348,16 @@ The module eliminates the scaling and heap memory limitations of Backstage's def
 │                                                                ▼                  │
 │  ┌─────────────────────────────────────────────────────────────────────────────┐  │
 │  │ Typesense Client (API Key Auth & Client-Side Load Balancer)                 │  │
-│  └──────────────────────────────┬──────────────────────────────┬───────────────┘  │
-│                                 │ (Failover & Health Check)    │                  │
-│                                 ▼                              ▼                  │
-│              ┌──────────────────────────┐       ┌──────────────────────────┐      │
-│              │ Typesense Node 1         │       │ Typesense Node 2...      │      │
-│              │ (Full Replication)       │       │ (Full Replication)       │      │
-│              │ backstage_software-catalog│      │ backstage_software-catalog│     │
-│              │ backstage_techdocs       │       │ backstage_techdocs       │      │
-│              │ ...                      │       │ ...                      │      │
-│              └──────────────────────────┘       └──────────────────────────┘      │
+│  └──────────────────────────┬───────────────────────────────────┬──────────────┘  │
+│                             │ (Failover & Health Check)         │                 │
+│                             ▼                                   ▼                 │
+│           ┌────────────────────────────┐      ┌────────────────────────────┐      │
+│           │ Typesense Node 1           │      │ Typesense Node 2...        │      │
+│           │ (Full Replication)         │      │ (Full Replication)         │      │
+│           │ backstage_software-catalog │      │ backstage_software-catalog │      │
+│           │ backstage_techdocs         │      │ backstage_techdocs         │      │
+│           │ ...                        │      │ ...                        │      │
+│           └────────────────────────────┘      └────────────────────────────┘      │
 │                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
