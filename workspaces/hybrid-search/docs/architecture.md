@@ -119,22 +119,28 @@ When a developer enters a search query into the Backstage portal user interface,
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Client Dispatch (`GET /api/search/query`)**  
+1. **Client Dispatch**
+
    The frontend issues an HTTP `GET /api/search/query` request containing search terms, document category filters, entity filters, and pagination parameters.
 
-2. **Backend Authentication & Engine Resolution**  
+2. **Backend Authentication & Engine Resolution**
+
    The search backend plugin authenticates the request, parses query parameters, and retrieves the active `SearchEngine` instance from the `SearchEngineRegistry`.
 
-3. **Query Translation (`SearchQuery` → Native DSL)**  
+3. **Query Translation (`SearchQuery` → Native DSL)**
+
    The active `SearchEngine` receives the abstract `SearchQuery` object and translates its terms and filters into engine-native query syntax (such as Elasticsearch JSON DSL, SQL, or Lunr term queries).
 
-4. **Target Execution & Retrieval**  
+4. **Target Execution & Retrieval**
+
    The `SearchEngine` dispatches the translated query to the underlying search service or datastore to fetch matching records.
 
-5. **Response Normalization (`SearchResultSet`)**  
+5. **Response Normalization (`SearchResultSet`)**
+
    The raw search response—containing matching documents, relevance scores, and snippet highlights—is mapped into Backstage's standardized `SearchResult` payload structure.
 
-6. **HTTP Response Serialization**  
+6. **HTTP Response Serialization**
+
    The search backend returns a JSON payload to the client containing the normalized search results, total result count, and pagination cursors.
 
 ## Section 3: Document Ingestion
@@ -156,13 +162,33 @@ Instead of subscribing to real-time push events when content changes, the backen
 └────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Step 1 – Scheduled Task Trigger**: The `Scheduler` fires a background re-indexing job based on the configured timer interval for a specific document type.
-- **Step 2 – Pipeline Assembly**: `IndexBuilder` instantiates the readable `Collator` stream, any transform `Decorator` streams, and the writable indexing stream of the registered `SearchEngine`.
-- **Step 3 – Stream Composition**: `IndexBuilder` connects the readable, transform, and writable streams into a unified Node.js stream pipeline.
-- **Step 4 – Data Extraction**: The `Collator` extracts records from its upstream source (such as Software Catalog entities or compiled TechDocs) and emits standardized `IndexableDocument` objects into the pipeline.
-- **Step 5 – Document Enrichment**: As documents pass through transform `Decorators`, additional metadata is appended or modified (such as RBAC security tags or canonical URLs).
-- **Step 6 – Batch Indexing**: The `SearchEngine` writable stream receives enriched documents, buffers them into memory batches, and writes them to the search engine.
-- **Step 7 – Pipeline Completion**: Once the `Collator` finishes emitting documents, the readable stream closes, in-memory buffers flush to the search engine, and task completion is reported to the `Scheduler`.
+1. **Scheduled Task Trigger**
+
+   The `Scheduler` fires a background re-indexing job based on the configured timer interval for a specific document type.
+
+2. **Pipeline Assembly**
+
+   `IndexBuilder` instantiates the readable `Collator` stream, any transform `Decorator` streams, and the writable indexing stream of the registered `SearchEngine`.
+
+3. **Stream Composition**
+
+   `IndexBuilder` connects the readable, transform, and writable streams into a unified Node.js stream pipeline.
+
+4. **Data Extraction**
+
+   The `Collator` extracts records from its upstream source (such as Software Catalog entities or compiled TechDocs) and emits standardized `IndexableDocument` objects into the pipeline.
+
+5. **Document Enrichment**
+
+   As documents pass through transform `Decorators`, additional metadata is appended or modified (such as RBAC security tags or canonical URLs).
+
+6. **Batch Indexing**
+
+   The `SearchEngine` writable stream receives enriched documents, buffers them into memory batches, and writes them to the search engine.
+
+7. **Pipeline Completion**
+
+   Once the `Collator` finishes emitting documents, the readable stream closes, in-memory buffers flush to the search engine, and task completion is reported to the `Scheduler`.
 
 ## Section 4: Architectural Constraints
 
