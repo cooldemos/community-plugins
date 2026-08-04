@@ -425,6 +425,41 @@ The Vertex AI Search backend module (`@backstage-community/plugin-search-backend
 
 The module enables Backstage deployments to offload search indexing and retrieval to Google Cloud, providing high scalability for large catalog and documentation workloads.
 
+```
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                      Vertex AI Search Module Architecture                         │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  [ Extension Points ]                                                             │
+│    ├── Standalone Mode       : searchEngineRegistryExtensionPoint                 │
+│    └── Hybrid Sub-Engine Mode: hybridSearchEngineRegistryExtensionPoint           │
+│                                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Vertex AI Search Backend Module                                             │  │
+│  │                                                                             │  │
+│  │ SearchQuery ──► [ Filter Translator ] ──► [ SearchServiceClient ]           │  │
+│  └──────────────────────────────────────────────────┬──────────────────────────┘  │
+│                                                     │ (GCP ADC Auth)              │
+│                                                     ▼                             │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Google Cloud Discovery Engine API (Location: global / regional)             │  │
+│  │                                                                             │  │
+│  │  ┌───────────────────────────────────┐    ┌──────────────────────────────┐  │  │
+│  │  │ Global Blended Search App         │    │ Dedicated Search Apps        │  │  │
+│  │  │ (Multi-Type Blended Querying)     │    │ (Category-Specific Tuning)   │  │  │
+│  │  └─────────────────┬─────────────────┘    └──────────────┬───────────────┘  │  │
+│  │                    │                                     │                  │  │
+│  │                    ▼                                     ▼                  │  │
+│  │  ┌───────────────────────────────────────────────────────────────────────┐  │  │
+│  │  │ Google Cloud Data Stores                                              │  │  │
+│  │  │  ├── backstage-techdocs   (Unstructured / Offloaded Ingestion)        │  │  │
+│  │  │  └── backstage-software-catalog (Structured / Direct Ingestion)       │  │  │
+│  │  └───────────────────────────────────────────────────────────────────────┘  │  │
+│  └─────────────────────────────────────────────────────────────────────────────┘  │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Operational Modes
 
 The Vertex AI Search module supports two operational modes depending on deployment needs:
