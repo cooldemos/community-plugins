@@ -565,7 +565,7 @@ The GCS Eventarc module (`@backstage-community/plugin-events-backend-module-gcs-
 
 In traditional Backstage setups, TechDocs indexing relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically poll Cloud Storage buckets to download and parse `search_index.json` manifest files inside the Node.js process, which can consume memory and delay search updates.
 
-The Eventarc module shifts document ingestion into a real-time, push-driven pipeline. This architecture relies on external CI/CD pipelines compiling TechDocs sites and uploading published assets to Google Cloud Storage (GCS)—because local container-disk builds bypass GCS, external compilation is a strict prerequisite for triggering storage events. Whenever CI/CD uploads or updates a `search_index.json` manifest in GCS, Cloud Storage emits a `google.cloud.storage.object.v1.finalized` event. Eventarc intercepts this event and routes an HTTP push notification (`POST /api/events/gcs`) directly to the Backstage webhook endpoint, initiating real-time index synchronization upon publication.
+Through the Eventarc module, document ingestion is shifted into a real-time, push-driven pipeline. In this architecture, TechDocs sites are compiled by external CI/CD pipelines and published assets are uploaded to Google Cloud Storage (GCS). Whenever a `search_index.json` manifest is uploaded or updated in GCS, a `google.cloud.storage.object.v1.finalized` event is emitted by Cloud Storage. This event is intercepted by Eventarc and an HTTP push notification (`POST /api/events/gcs`) is routed directly to the Backstage webhook endpoint, initiating real-time index synchronization upon publication.
 
 ### Webhook Ingress & Execution Flow
 
