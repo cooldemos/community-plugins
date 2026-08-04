@@ -367,7 +367,7 @@ The module eliminates the scaling and heap memory limitations of Backstage's def
 The Typesense module supports two operational modes depending on portal deployment requirements:
 
 - **Standalone Mode**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the portal's primary search engine. All collator indexing streams and search queries across all document categories are handled exclusively by Typesense.
-- **Hybrid Mode**: Registers into the `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
+- **Hybrid Mode**: Registers into the `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (e.g., Vertex AI Search for TechDocs).
 
 ### Authentication
 
@@ -375,7 +375,7 @@ Authentication between the search module and external Typesense instances is sec
 
 ### Cluster Topology
 
-Connectivity is configured through an array of cluster node definitions (`nodes`), each specifying a host, port, protocol, and optional path prefix. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable.
+Connectivity is configured through an array of cluster node definitions, each specifying a host, port, protocol, and optional path prefix. The module's internal client uses this node topology to execute automatic client-side load balancing and failover routing across cluster nodes if an instance becomes unreachable.
 
 ### Schema Management & Document Indexing
 
@@ -453,10 +453,12 @@ Vertex AI Search evaluates queries dynamically and returns content at multiple l
 └───────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Extractive Answers**: High-precision, direct sentences that synthesize answers to natural language questions (for example, _"How do I configure OAuth in the auth-service?"_). Because extractive answers directly satisfy informational queries with minimal noise, they take highest priority over all other content types.
-- **Extractive Segments**: Paragraph-length context blocks surrounding query terms. When no single-sentence direct answer exists, segments preserve larger contextual blocks so engineers can understand surrounding documentation without navigating away from search results.
-- **Search Snippets**: Traditional keyword match fragments containing highlighted query terms bounded by contextual text. These apply when Vertex AI Search processes a targeted keyword lookup rather than a semantic question.
-- **Fallback Document Body**: If Vertex AI Search returns no extractive answers, segments, or snippets for a matching record, the module falls back to the raw body text of the indexed document page. This acts as a safety guardrail to ensure every search result displays a non-empty summary.
+| Priority | Content Type               | Description & Behavior                                                                                                                                              |
+| :------: | :------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+|  **1**   | **Extractive Answers**     | High-precision, direct sentences that synthesize answers to natural language questions (e.g., _"How do I configure OAuth?"_). Satisfies queries with minimal noise. |
+|  **2**   | **Extractive Segments**    | Paragraph-length context blocks surrounding query terms. Preserves larger context when no single-sentence direct answer exists.                                     |
+|  **3**   | **Search Snippets**        | Traditional keyword match fragments containing highlighted query terms. Used during targeted keyword lookups.                                                       |
+|  **4**   | **Fallback Document Body** | Raw body text of the indexed document page. Acts as a safety guardrail when no extractive content is returned.                                                      |
 
 ### Catalog & Storage Reconciliation
 
