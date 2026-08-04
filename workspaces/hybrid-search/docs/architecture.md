@@ -166,27 +166,23 @@ Instead of subscribing to real-time push events when content changes, the backen
 
    The `Scheduler` fires a background re-indexing job based on the configured timer interval for a specific document type.
 
-2. **Pipeline Assembly**
+2. **Pipeline Construction**
 
-   `IndexBuilder` instantiates the readable `Collator` stream, any transform `Decorator` streams, and the writable indexing stream of the registered `SearchEngine`.
+   `IndexBuilder` instantiates the readable `Collator` stream, any transform `Decorator` streams, and the writable indexing stream of the registered `SearchEngine`, connecting them into a unified Node.js stream pipeline.
 
-3. **Stream Composition**
-
-   `IndexBuilder` connects the readable, transform, and writable streams into a unified Node.js stream pipeline.
-
-4. **Data Extraction**
+3. **Data Extraction**
 
    The `Collator` extracts records from its upstream source (such as Software Catalog entities or compiled TechDocs) and emits standardized `IndexableDocument` objects into the pipeline.
 
-5. **Document Enrichment**
+4. **Document Enrichment**
 
    As documents pass through transform `Decorators`, additional metadata is appended or modified (such as RBAC security tags or canonical URLs).
 
-6. **Batch Indexing**
+5. **Batch Indexing**
 
    The `SearchEngine` writable stream receives enriched documents, buffers them into memory batches, and writes them to the search engine.
 
-7. **Pipeline Completion**
+6. **Pipeline Completion**
 
    Once the `Collator` finishes emitting documents, the readable stream closes, in-memory buffers flush to the search engine, and task completion is reported to the `Scheduler`.
 
