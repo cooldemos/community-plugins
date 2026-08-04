@@ -204,12 +204,12 @@ While standard Backstage search provides a clean and straightforward baseline fo
 
 The Hybrid Search Workspace is architected as four modular, backend packages designed for Backstage's New Backend System (`@backstage/backend-plugin-api`). Each package encapsulates a distinct architectural responsibility:
 
-| Package                                                              | Role / Type            | Core Responsibility                                                                                                            |
-| :------------------------------------------------------------------- | :--------------------- | :----------------------------------------------------------------------------------------------------------------------------- |
-| **`@backstage-community/plugin-search-backend-module-hybrid`**       | Federated Query Router | Intercepts search requests, routes queries to sub-engines by document type, manages parallel execution, and normalizes scores. |
-| **`@backstage-community/plugin-search-backend-module-typesense`**    | Sub-Engine (Typesense) | In-memory search engine optimized for fast typo-tolerant keyword matching, metadata filtering, and vector search.              |
-| **`@backstage-community/plugin-search-backend-module-vertexai`**     | Sub-Engine (Vertex AI) | Managed enterprise search engine delivering semantic vector retrieval, natural language understanding, and extractive answers. |
-| **`@backstage-community/plugin-events-backend-module-gcs-eventarc`** | Eventarc Webhook       | Event-driven push webhook (`/api/events/gcs`) for real-time TechDocs index synchronization with Vertex AI Search.              |
+| Package                                                              | Description                                                                                                                                                                                                                                  |
+| :------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`@backstage-community/plugin-search-backend-module-hybrid`**       | Top-level federated query router and extension point registry. Intercepts search requests, routes queries to mapped sub-engines based on document type, manages parallel fan-out, and normalizes result scores across heterogeneous engines. |
+| **`@backstage-community/plugin-search-backend-module-typesense`**    | Search engine module backed by Typesense, an open-source, fast in-memory search engine optimized for typo-tolerant keyword matching, structured metadata filtering, and vector search.                                                       |
+| **`@backstage-community/plugin-search-backend-module-vertexai`**     | Search engine module backed by Google Cloud Vertex AI Search, a managed enterprise search service providing semantic vector retrieval, natural language understanding, and LLM-powered extractive answers.                                   |
+| **`@backstage-community/plugin-events-backend-module-gcs-eventarc`** | Event-driven asynchronous ingestion webhook module (`/api/events/gcs`) used exclusively with the Vertex AI Search backend search module.                                                                                                     |
 
 ## Section 2: Hybrid Search Router
 
