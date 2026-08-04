@@ -44,7 +44,7 @@ This document is written for engineers configuring search in Backstage. It expla
 │  Part 3: Deployment & Operations Manual                                           │
 │    ├── Section 1: Standalone Typesense Search Engine                              │
 │    ├── Section 2: Standalone Vertex AI Search Engine                              │
-│    ├── Section 3: Federated Hybrid Search Router                                  │
+│    ├── Section 3: Hybrid Search Router                                  │
 │    ├── Section 4: Integrating Search Backends with the Hybrid Search Router       │
 │    └── Section 5: Operational Runbooks & Diagnostics                              │
 └───────────────────────────────────────────────────────────────────────────────────┘
@@ -353,7 +353,9 @@ The module eliminates the scaling and heap memory limitations of Backstage's def
 │                                 ▼                              ▼                  │
 │                      ┌─────────────────────┐        ┌─────────────────────┐       │
 │                      │ Typesense Node 1    │        │ Typesense Node 2... │       │
-│                      │  backstage_catalog  │        │  backstage_techdocs │       │
+│                      │ (Full Replication)  │        │ (Full Replication)  │       │
+│                      │ backstage_catalog   │        │ backstage_catalog   │       │
+│                      │ backstage_techdocs  │        │ backstage_techdocs  │       │
 │                      └─────────────────────┘        └─────────────────────┘       │
 │                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
@@ -363,8 +365,8 @@ The module eliminates the scaling and heap memory limitations of Backstage's def
 
 The Typesense module supports two operational modes depending on portal deployment requirements:
 
-- **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the portal's primary search engine. All collator indexing streams and search queries across all document categories are handled exclusively by Typesense.
-- **Hybrid Sub-Engine Mode (Router Integration)**: Registers into the `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
+- **Standalone Mode**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the portal's primary search engine. All collator indexing streams and search queries across all document categories are handled exclusively by Typesense.
+- **Hybrid Mode**: Registers into the `hybridSearchEngineRegistryExtensionPoint` exposed by the hybrid search module. In this mode, Typesense functions as a specialized sub-engine assigned to specific document categories (such as catalog entities), coexisting with complementary backends (such as Vertex AI Search for TechDocs).
 
 ### Authentication
 
@@ -398,15 +400,15 @@ The module enables Backstage deployments to offload search indexing and retrieva
 
 The Vertex AI Search module supports two operational modes depending on deployment needs:
 
-- **Standalone Mode (Primary Search Engine)**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the primary search engine for the portal. Collator streams index all Backstage document types into configured Google Cloud Data Stores, and all search queries are served through Vertex AI Search engines.
-- **Hybrid Sub-Engine Mode (Router Integration)**: Registers into `hybridSearchEngineRegistryExtensionPoint` as a specialized sub-engine. In hybrid deployments, Vertex AI Search is assigned to specific document categories (for instance, TechDocs) to deliver semantic search over unstructured content, while structured entities are routed to complementary backends.
+- **Standalone Mode**: Registers directly into Backstage's core `searchEngineRegistryExtensionPoint` as the primary search engine for the portal. Collator streams index all Backstage document types into configured Google Cloud Data Stores, and all search queries are served through Vertex AI Search engines.
+- **Hybrid Mode**: Registers into `hybridSearchEngineRegistryExtensionPoint` as a specialized sub-engine. In hybrid deployments, Vertex AI Search is assigned to specific document categories (for instance, TechDocs) to deliver semantic search over unstructured content, while structured entities are routed to complementary backends.
 
-### Data Stores & App Engines
+### Data Stores & Search Engines
 
 In Vertex AI Search, data storage and query execution are decoupled:
 
-- **Data Stores**: Represent storage containers for indexed documents. Each document type is configured with a target GCP project ID, region/location (such as `global` or `europe-west4`), and Data Store ID (`datastoreId`).
-- **App Engines**: Represent query-serving endpoints built over one or more Data Stores. The module supports per-type engines for category-specific search and a global blended search app engine (`blendedSearch`) that queries across multiple Data Stores for unified multi-category requests.
+- **Data Stores**: Represent storage containers for indexed documents. Each document type is configured with a target Google Cloud project ID, region/location (such as `global` or `eu`), and Data Store ID (e.g., `backstage-techdocs`).
+- **Search Engines**: Represent query-serving endpoints built over one or more Data Stores. The module can be configured with an engine per document type for category-specific search configurations and a global blended search engine (`blendedSearch`) that queries across multiple Data Stores for unified multi-category requests.
 
 Authentication and request routing rely on Google Cloud Application Default Credentials (ADC). The module dynamically manages regionalized `SearchServiceClient` instances, routing requests to location-prefixed endpoints (`<location>-discoveryengine.googleapis.com`) or global endpoints to enforce data residency compliance.
 
@@ -455,7 +457,7 @@ Vertex AI Search evaluates queries dynamically and returns content at multiple l
 - **Search Snippets**: Traditional keyword match fragments containing highlighted query terms bounded by contextual text. These apply when Vertex AI Search processes a targeted keyword lookup rather than a semantic question.
 - **Fallback Document Body**: If Vertex AI Search returns no extractive answers, segments, or snippets for a matching record, the module falls back to the raw body text of the indexed document page. This acts as a safety guardrail to ensure every search result displays a non-empty summary.
 
-### Asynchronous Catalog & Storage Reconciliation (Sweeper Task)
+### Catalog & Storage Reconciliation
 
 Decoupled deployments offload documentation builds and search indexing to external CI/CD pipelines and storage webhooks (detailed in Section 5). Because in-process Backstage collators are bypassed, deleting an entity from the Software Catalog does not trigger automatic index cleanup. Without explicit reconciliation, removed components leave behind orphaned documentation files in Google Cloud Storage (GCS) and stale search records in Vertex AI Search.
 
@@ -1159,7 +1161,7 @@ spec:
 
 ---
 
-## Section 3: Federated Hybrid Search Router
+## Section 3: Hybrid Search Router
 
 Deploying the hybrid search router orchestrates multi-engine search across registered sub-engines.
 
