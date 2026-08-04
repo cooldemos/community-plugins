@@ -221,6 +221,32 @@ Standard Backstage search uses a single-engine extension point (`searchEngineReg
 
 At backend startup, modules like Typesense and Vertex AI Search register themselves with the hybrid engine through this extension point without hardcoded package coupling. Additional search backends can be added similarly by implementing a backend module that registers with the extension point.
 
+```
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           Hybrid Search Extension Point Registry                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  Backstage Core Search Plugin (`@backstage/plugin-search-backend`)                          │
+│                                │                                                            │
+│                                ▼ (Core Single-Engine Registration)                          │
+│                   [ searchEngineRegistryExtensionPoint ]                                    │
+│                                │                                                            │
+│                                ▼                                                            │
+│       Hybrid Search Router (`@backstage-community/plugin-search-backend-module-hybrid`)     │
+│                                │                                                            │
+│                                ▼ (Custom Extension Point)                                   │
+│               [ hybridSearchEngineRegistryExtensionPoint ]                                  │
+│                                │                                                            │
+│        ┌───────────────────────┼───────────────────────┐                                    │
+│        ▼                       ▼                       ▼                                    │
+│  ┌────────────┐         ┌────────────┐         ┌──────────────────┐                         │
+│  │ Typesense  │         │ Vertex AI  │         │ Custom Backend   │                         │
+│  │ Module     │         │ Module     │         │ Module           │                         │
+│  └────────────┘         └────────────┘         └──────────────────┘                         │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
 ### Query Dispatch
 
 The core architectural solution to the limitations of standard Backstage search is **Federated Multi-Engine Routing**. Rather than forcing all portal document categories into a single, uniform search engine, the Hybrid Search Architecture introduces a dynamic query orchestrator (`HybridSearchEngine`) that intercepts incoming search requests, evaluates document category filters, dispatches queries to domain-specialized sub-engines, and consolidates the results into a unified response.
