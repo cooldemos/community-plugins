@@ -147,7 +147,7 @@ When a developer enters a search query into the Backstage portal user interface,
 
 Standard Backstage manages document ingestion through an in-process, stream-based pull pipeline. Operating directly within the primary Node.js backend process, this pipeline periodically collects content from portal sources and indexes it into the active search engine.
 
-Instead of subscribing to real-time push events when content changes, the backend relies on scheduled polling. At configured intervals, it extracts data from upstream services (such as Software Catalog entities or compiled TechDocs search files), streams the documents through optional enrichment layers, and writes them in batches into the search store:
+Instead of subscribing to real-time push events when content changes, the backend relies on scheduled polling. At configured intervals, it extracts data from upstream services—such as Software Catalog entities or TechDocs search manifests (`search_index.json`, the JSON index generated during MkDocs site builds containing page paths, headings, and document text)—streams the documents through optional enrichment layers, and writes them in batches into the search store:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -498,14 +498,14 @@ Operating a background cleanup task complements Eventarc-driven ingestion withou
 
 ### Architecture
 
-The GCS Eventarc module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) replaces Backstage's default pull-based TechDocs indexer with an event-driven ingestion pipeline.
+The GCS Eventarc module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) replaces standard scheduled polling with real-time, event-driven search indexing.
 
-In standard Backstage deployments, TechDocs supports external site compilation—where CI/CD pipelines build static HTML and `search_index.json` files before uploading them to Google Cloud Storage (GCS). However, indexing those files into search backends still relies on in-process collators (`DefaultTechDocsCollatorFactory`) running inside the Node.js application server. These collators poll storage buckets on fixed schedules, downloading and parsing JSON files inside V8 heap memory.
+In traditional Backstage setups, TechDocs indexing relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically poll Cloud Storage buckets to download and parse `search_index.json` manifest files inside the Node.js process, which can consume memory and delay search updates.
 
-The Eventarc module shifts index synchronization from scheduled polling to event-driven push processing:
+The Eventarc module shifts this into a real-time, push-driven pipeline:
 
-- External compilation is a strict prerequisite. The pipeline relies on `google.cloud.storage.object.v1.finalized` events emitted by GCS when a `search_index.json` object is created or updated. Local, in-process documentation builds write directly to container disk, bypassing GCS and preventing Eventarc triggers from firing.
-- Indexing is triggered instantly when documentation is published. When Cloud Storage receives an updated `search_index.json` file from CI/CD, Eventarc delivers a webhook payload to `/api/events/gcs`, initiating index synchronization out-of-band without blocking the application server or running recurring background polling loops.
+- **External CI/CD Builds Required**: TechDocs sites must be compiled by external CI/CD pipelines and uploaded to Google Cloud Storage (GCS). Local container-disk builds bypass GCS, so GCS storage events will not fire.
+- **Event-Driven Webhook Indexing**: When CI/CD publishes a new or updated `search_index.json` file to GCS, GCS emits a `google.cloud.storage.object.v1.finalized` storage event. Eventarc instantly routes a webhook push notification (`POST /api/events/gcs`) to Backstage, triggering real-time index synchronization upon publication.
 
 ### Webhook Ingress & Execution Flow
 
