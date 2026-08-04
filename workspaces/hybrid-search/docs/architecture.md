@@ -486,14 +486,13 @@ When executed, the sweeper reconciles live portal entities against the contents 
 
    Reads the `search_index.json` file of each orphaned folder to derive the canonical page paths and deterministic document IDs generated during initial ingestion.
 
-5. **Purge Data Store & Storage**
+5. **Purge Data Store Documents & Cloud Storage Assets**
 
-   Deletes matching document records from the Vertex AI Search Data Store, then purges the corresponding static HTML and media files from Cloud Storage.
+   Deletes matching document records from the Vertex AI Search Data Store, then purges the corresponding assets (HTML, CSS, images, etc.) from the Cloud Storage bucket.
 
-#### Operational Resilience & Design Trade-Offs
+   If an orphaned component's `search_index.json` file is missing or corrupted, the sweeper logs a warning, skips Discovery Engine document deletion calls, and proceeds directly to wiping the orphaned static files in the bucket.
 
-- **Resilience Against Missing Index Files**: If an orphaned component's `search_index.json` file is missing or corrupted, the sweeper logs a warning, skips Discovery Engine document deletion calls, and proceeds directly to wiping the orphaned static files from GCS, preventing deadlocks or stuck cleanup runs.
-- **Low-Overhead Eventual Consistency**: Operating a background cleanup task does not negate the performance benefits of off-band Eventarc ingestion. Heavy, high-frequency operations—such as parsing static HTML and streaming document indices during publish events—remain completely offloaded from the Backstage Node.js server. The sweeper operates purely as a low-frequency, lightweight garbage collector for rare entity deletions, securing eventual index consistency while preserving server responsiveness.
+Operating a background cleanup task complements Eventarc-driven ingestion without impacting server responsiveness. While the Eventarc webhook processes real-time index updates upon publication, the sweeper runs as an infrequent background job specifically to reconcile rare entity deletions. By executing on a low-frequency schedule, it maintains eventual index consistency without adding continuous overhead to the Backstage backend.
 
 ## Section 5: GCS Eventarc Ingestion Webhook Architecture
 
