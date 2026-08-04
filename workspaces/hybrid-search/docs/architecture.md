@@ -351,13 +351,13 @@ The module eliminates the scaling and heap memory limitations of Backstage's def
 │  └──────────────────────────────┬──────────────────────────────┬───────────────┘  │
 │                                 │ (Failover & Health Check)    │                  │
 │                                 ▼                              ▼                  │
-│                      ┌─────────────────────┐        ┌─────────────────────┐       │
-│                      │ Typesense Node 1    │        │ Typesense Node 2... │       │
-│                      │ (Full Replication)  │        │ (Full Replication)  │       │
-│                      │ backstage_catalog   │        │ backstage_catalog   │       │
-│                      │ backstage_techdocs  │        │ backstage_techdocs  │       │
-│                      │ ...                 │        │ ...                 │       │
-│                      └─────────────────────┘        └─────────────────────┘       │
+│              ┌──────────────────────────┐       ┌──────────────────────────┐      │
+│              │ Typesense Node 1         │       │ Typesense Node 2...      │      │
+│              │ (Full Replication)       │       │ (Full Replication)       │      │
+│              │ backstage_software-catalog│      │ backstage_software-catalog│     │
+│              │ backstage_techdocs       │       │ backstage_techdocs       │      │
+│              │ ...                      │       │ ...                      │      │
+│              └──────────────────────────┘       └──────────────────────────┘      │
 │                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
