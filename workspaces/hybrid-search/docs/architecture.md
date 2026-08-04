@@ -470,23 +470,23 @@ The sweeper task runs as a background job managed by Backstage's `SchedulerServi
 
 When executed, the sweeper reconciles live portal entities against the contents of the TechDocs Cloud Storage bucket to find orphaned documentation through a 5-step reconciliation pipeline:
 
-1. **Active Entity Extraction**
+1. **Fetch Active Catalog Entities**
 
    Queries the Catalog Service to construct a lookup set of active canonical entity references (`<namespace>/<kind>/<name>`).
 
-2. **Storage Footprint Inspection**
+2. **Scan Cloud Storage Assets**
 
    Scans directory prefixes in the TechDocs Cloud Storage bucket to discover all published documentation assets.
 
-3. **Orphan Detection**
+3. **Identify Orphaned Docs**
 
    Cross-references storage directory paths against live catalog references to isolate orphaned documentation folders.
 
-4. **Document ID Resolution**
+4. **Resolve Document IDs**
 
    Reads the `search_index.json` file of each orphaned folder to derive the canonical page paths and deterministic document IDs generated during initial ingestion.
 
-5. **Dual-Target Purging**
+5. **Purge Data Store & Storage**
 
    Deletes matching document records from the Vertex AI Search Data Store, then purges the corresponding static HTML and media files from Cloud Storage.
 
