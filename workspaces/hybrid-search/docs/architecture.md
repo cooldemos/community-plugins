@@ -563,9 +563,11 @@ Operating a background cleanup task complements Eventarc-driven ingestion withou
 
 The GCS Eventarc module (`@backstage-community/plugin-events-backend-module-gcs-eventarc`) replaces standard scheduled polling with real-time, event-driven search indexing.
 
+Google Cloud Eventarc is a managed eventing service that captures state changes from Google Cloud resources (such as Cloud Storage object mutations) and asynchronously delivers them as CloudEvents-compliant HTTP push payloads to designated targets, including webhooks running inside GKE clusters or Cloud Run services.
+
 In traditional Backstage setups, TechDocs indexing relies on in-process collators (`DefaultTechDocsCollatorFactory`) that periodically poll Cloud Storage buckets to download and parse `search_index.json` manifest files inside the Node.js process, which can consume memory and delay search updates.
 
-Through the Eventarc module, document ingestion is shifted into a real-time, push-driven pipeline. In this architecture, TechDocs sites are compiled by external CI/CD pipelines and published assets are uploaded to Google Cloud Storage (GCS). Whenever a `search_index.json` manifest is uploaded or updated in GCS, a `google.cloud.storage.object.v1.finalized` event is emitted by Cloud Storage. This event is intercepted by Eventarc and an HTTP push notification (`POST /api/events/gcs`) is routed directly to the Backstage webhook endpoint, initiating real-time index synchronization upon publication.
+Through the Eventarc module, document ingestion is shifted into a real-time, push-driven pipeline. In this architecture, TechDocs sites are compiled by external CI/CD pipelines and published assets are uploaded to Google Cloud Storage (GCS). Whenever a `search_index.json` manifest is uploaded or updated in GCS, a `google.cloud.storage.object.v1.finalized` event is emitted. This event is intercepted by Eventarc and an HTTP push notification (`POST /api/events/gcs`) is routed directly to the Backstage webhook endpoint, initiating real-time index synchronization upon publication.
 
 ### Webhook Ingress & Execution Flow
 
