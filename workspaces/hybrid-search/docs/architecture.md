@@ -147,7 +147,7 @@ When a developer enters a search query into the Backstage portal user interface,
 
 Standard Backstage manages document ingestion through an in-process, stream-based pull pipeline. Operating directly within the primary Node.js backend process, this pipeline periodically collects content from portal sources and indexes it into the active search engine.
 
-Instead of subscribing to real-time push events when content changes, the backend relies on scheduled polling. At configured intervals, it extracts data from upstream services—such as Software Catalog entities or TechDocs search manifests (`search_index.json`, the JSON index generated during MkDocs site builds containing page paths, headings, and document text)—streams the documents through optional enrichment layers, and writes them in batches into the search store:
+To detect content changes, the backend relies on scheduled polling. At configured intervals, it extracts data from upstream services—such as Software Catalog entities or TechDocs search manifests (`search_index.json`, the JSON index generated during MkDocs site builds containing page paths, headings, and document text)—streams the documents through optional enrichment layers, and writes them in batches into the search store:
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────────────┐
