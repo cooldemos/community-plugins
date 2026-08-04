@@ -356,6 +356,7 @@ The module eliminates the scaling and heap memory limitations of Backstage's def
 │                      │ (Full Replication)  │        │ (Full Replication)  │       │
 │                      │ backstage_catalog   │        │ backstage_catalog   │       │
 │                      │ backstage_techdocs  │        │ backstage_techdocs  │       │
+│                      │ ...                 │        │ ...                 │       │
 │                      └─────────────────────┘        └─────────────────────┘       │
 │                                                                                   │
 └───────────────────────────────────────────────────────────────────────────────────┘
