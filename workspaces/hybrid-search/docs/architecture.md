@@ -466,19 +466,29 @@ Decoupled deployments offload documentation builds and search indexing to extern
 
 To maintain index consistency, the Vertex AI Search module runs a background cleanup task (`techdocs-orphan-sweeper`) that purges orphaned documentation from GCS and Vertex AI Search.
 
-#### Task Activation & Scheduling Guardrails
+The sweeper task runs as a background job managed by Backstage's `SchedulerService`. It automatically activates when decoupled ingestion and cleanup are enabled, and disables itself when direct collator indexing is active. To reduce resource usage, the task runs every two hours by default. It also includes an initial two-minute startup delay so `CatalogService` can finish initializing before orphan checks begin.
 
-Managed by Backstage's `SchedulerService`, the sweeper task enforces strict operational guardrails to prevent resource contention and startup race conditions. The background job activates automatically whenever decoupled ingestion is configured with cleanup enabled; if direct in-process collator indexing is active instead, the sweeper gracefully disables itself to avoid redundant work. To minimize operational overhead, reconciliation executes on a low-frequency cadence (defaulting to every two hours). Additionally, the task enforces an initial startup delay (defaulting to two minutes) to ensure the `CatalogService` completes its full bootstrapping sequence before orphan evaluation begins.
+When executed, the sweeper reconciles live portal entities against the contents of the TechDocs Cloud Storage bucket to find orphaned documentation through a 5-step reconciliation pipeline:
 
-#### Sweep Reconciliation Workflow
+1. **Active Entity Extraction**
 
-When executed, `runCatalogCleanupSweeper` reconciles live portal entities against cloud storage and search indices through a 5-step reconciliation pipeline:
+   Queries the Catalog Service to construct a lookup set of active canonical entity references (`<namespace>/<kind>/<name>`).
 
-1. **Active Entity Extraction**: Queries the Catalog Service to construct a lookup set of active canonical entity references (`<namespace>/<kind>/<name>`).
-2. **Storage Footprint Inspection**: Scans directory prefixes in the TechDocs Cloud Storage bucket to discover all published documentation assets.
-3. **Orphan Detection**: Cross-references storage directory paths against live catalog references to isolate orphaned documentation folders.
-4. **Document ID Resolution**: Reads the `search_index.json` file of each orphaned folder to derive the canonical page paths and deterministic document IDs generated during initial ingestion.
-5. **Dual-Target Purging**: Deletes matching document records from the Vertex AI Search Data Store, then purges the corresponding static HTML and media files from Cloud Storage.
+2. **Storage Footprint Inspection**
+
+   Scans directory prefixes in the TechDocs Cloud Storage bucket to discover all published documentation assets.
+
+3. **Orphan Detection**
+
+   Cross-references storage directory paths against live catalog references to isolate orphaned documentation folders.
+
+4. **Document ID Resolution**
+
+   Reads the `search_index.json` file of each orphaned folder to derive the canonical page paths and deterministic document IDs generated during initial ingestion.
+
+5. **Dual-Target Purging**
+
+   Deletes matching document records from the Vertex AI Search Data Store, then purges the corresponding static HTML and media files from Cloud Storage.
 
 #### Operational Resilience & Design Trade-Offs
 
