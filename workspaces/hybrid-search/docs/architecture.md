@@ -6,19 +6,19 @@
 
 ## Executive Summary
 
-Standard upstream Backstage search provides a foundational baseline for developer portals by organizing discovery around a central search backend plugin. The core system routes all portal queries through a single search engine backend, using background pipelines to collect software catalog entities and technical documentation pages on periodic timer intervals.
+Standard upstream Backstage search provides a foundational baseline for developer portals by organizing discovery around a central search backend plugin. The core system routes all portal queries through a single search engine backend, using background pipelines to collect software catalog entities, technical documentation, etc on periodic timer intervals.
 
-However, as developer portals scale in size and complexity, this baseline architecture encounters three structural limitations. First, hard-binding all portal queries to a single search engine prevents leveraging specialized backends tailored to specific content types. Second, reliance on lexical keyword matching precludes semantic vector retrieval and hybrid ranking models for unstructured documentation. Finally, executing background ingestion pipelines directly inside the application server creates CPU saturation and V8 memory strain within the single-threaded Node.js runtime.
+However, as developer portals scale in size and complexity, organizations often encounter architectural trade-offs across three main areas. First, directing all portal queries to a single search engine can make it challenging to leverage specialized backends tailored to specific content types. Second, relying solely on lexical keyword matching can limit opportunities to combine keyword search with semantic vector retrieval for unstructured documentation. Finally, running background ingestion pipelines directly inside the application server can lead to resource contention within the single-threaded Node.js runtime during large-scale indexing operations.
 
-The **Hybrid Search Workspace** resolves these issues by introducing:
+The **Hybrid Search Workspace** extends baseline capabilities by introducing:
 
-- A multi-engine search router to dispatch search requests across different backends based on content type.
-- Search backend modules for Typesense and Vertex AI Search that power semantic search and run standalone or combined in hybrid mode.
-- An offloaded indexing pattern (implemented for Vertex AI Search) that shifts search indexing out of the application server process.
+- A hybrid search router to dispatch search requests across different backends based on content type.
+- Search backend modules for Typesense and Vertex AI Search that power semantic search and can run standalone or combined with the hybrid search router.
+- An offloaded indexing implementation pattern (for Vertex AI Search) that shifts search indexing out of the application server process.
 
-This document is written for engineers configuring search in Backstage. It explains how to use the solutions provided in this workspace, while providing context on how default Backstage search works and why this workspace was created. The guide is organized into three parts:
+This document is written for engineers configuring search in Backstage. It explains how to use the solutions provided in this workspace, while providing foundational context on standard Backstage search to illustrate how this workspace builds upon and extends default capabilities. The guide is organized into three parts:
 
-- **Part 1: Backstage Search Architecture** analyzes core Backstage search abstractions, query lifecycles, and structural bottlenecks.
+- **Part 1: Backstage Search Architecture** provides baseline context by analyzing core Backstage search abstractions, query lifecycles, and ingestion pipelines.
 - **Part 2: Workspace Architecture & Backend Module Design** details the federated search router, engine modules, and offloaded event-driven indexing architecture.
 - **Part 3: Deployment & Operations Manual** provides production configuration references, cloud infrastructure provisioning guides, network security policies, and operational runbooks.
 
@@ -42,12 +42,11 @@ This document is written for engineers configuring search in Backstage. It expla
 │    └── Section 5: GCS Eventarc Ingestion Webhook Architecture                     │
 │                                                                                   │
 │  Part 3: Deployment & Operations Manual                                           │
-│    ├── Section 1: Standalone Typesense Deployment                                 │
-│    ├── Section 2: Standalone Vertex AI Search Deployment                          │
-│    ├── Section 3: Federated Hybrid Search Router Deployment                       │
-│    ├── Section 4: Authoring & Registering Custom Search Sub-Engines               │
-│    ├── Section 5: Webhook Networking & Security Hardening                         │
-│    └── Section 6: Operational Runbooks & Diagnostics                              │
+│    ├── Section 1: Standalone Typesense Search Engine                              │
+│    ├── Section 2: Standalone Vertex AI Search Engine                              │
+│    ├── Section 3: Federated Hybrid Search Router                                  │
+│    ├── Section 4: Integrating Search Backends with the Hybrid Search Router       │
+│    └── Section 5: Operational Runbooks & Diagnostics                              │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -156,7 +155,7 @@ Instead of subscribing to real-time push events when content changes, the backen
 
 ## Section 4: Architectural Constraints
 
-While standard Backstage search provides a simple baseline for small portal installations, analyzing its runtime behavior reveals four fundamental architectural limitations that severely impact scalability, search relevance, operational stability, and index freshness in production environments:
+While standard Backstage search provides a clean and straightforward baseline for developer portals, expanding into high-volume production environments highlights four key architectural trade-offs regarding engine flexibility, search models, resource allocation, and index freshness:
 
 - **Single Search Engine Binding**: The standard Backstage core search backend (`@backstage/plugin-search-backend`) enforces a strict single-engine registration pattern. The core `SearchEngineRegistry` design assumes that one, and only one, `SearchEngine` instance handles all search capabilities for the entire developer portal. If a second search engine module attempts to register itself during backend initialization, the core system throws a fatal startup exception. Furthermore, standard Backstage core possesses zero native routing logic to inspect document types or direct requests to distinct engines based on requested document categories, limiting the portal to a single monolithic discovery topology.
 
@@ -856,7 +855,7 @@ backend.add(
 backend.start();
 ```
 
-#### Application Configuration
+#### Configuration
 
 Configure direct collator ingestion in `app-config.yaml`:
 
@@ -927,7 +926,7 @@ backend.add(
 backend.start();
 ```
 
-#### Application Configuration
+#### Configuration
 
 Configure offloaded TechDocs ingestion and catalog orphan cleanup in `app-config.yaml`:
 
@@ -1008,9 +1007,126 @@ gcloud pubsub subscriptions update <EVENTARC_SUBSCRIPTION_NAME> \
   --max-delivery-attempts=5
 ```
 
+#### Webhook Networking & Security Hardening
+
+Securing the `/api/events/gcs` webhook path requires aligning network routing constraints with edge security policies.
+
+##### Webhook Parameter Reference Matrix
+
+| Parameter                                                        | Type / Required             | Default   | Description                                                                                                |
+| :--------------------------------------------------------------- | :-------------------------- | :-------- | :--------------------------------------------------------------------------------------------------------- |
+| **`events.modules.gcsEventarcWebhook.oidc.enabled`**             | `boolean` (Optional)        | `false`   | Enables Google OIDC Bearer token verification (`true` for Cloud Run; `false` for private GKE VPC routing). |
+| **`events.modules.gcsEventarcWebhook.oidc.audience`**            | `string` (Required if OIDC) | –         | Expected OIDC target audience URL (e.g., `https://backstage.example.com/api/events/gcs`).                  |
+| **`events.modules.gcsEventarcWebhook.oidc.serviceAccountEmail`** | `string` (Optional)         | –         | Expected service account email signing the incoming OIDC Bearer token.                                     |
+| **`events.modules.gcsEventarcWebhook.maxConcurrency`**           | `number` (Optional)         | `5`       | Maximum concurrent deletion operations permitted during delta reconciliation.                              |
+| **`events.modules.gcsEventarcWebhook.batchSize`**                | `number` (Optional)         | `100`     | Maximum number of documents imported per batch request to Vertex AI Search (1–100).                        |
+| **`events.modules.gcsEventarcWebhook.payloadSizeLimit`**         | `string` (Optional)         | `'100kb'` | Express body-parser size limit for incoming GCS Eventarc push notifications.                               |
+
+##### Backstage Kubernetes Service Mapping (Port 80 Constraint)
+
+Configure the Kubernetes `Service` manifest for Backstage to expose port 80 mapped to container target port 7007:
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  type: ClusterIP
+  ports:
+    - port: 7007
+      targetPort: 7007
+      name: http
+    - port: 80
+      targetPort: 7007
+      name: eventarc # Maps Eventarc port 80 traffic to container port 7007
+  selector:
+    app: backstage
+```
+
+##### Edge Ingress Protection Policies
+
+Because OIDC verification is disabled for GKE deployments, public access to `/api/events/gcs` must be blocked at the edge layer to prevent unauthorized index updates.
+
+Operators can enforce security using one of the following controls:
+
+###### 1. GKE Gateway API Path Rewrite (`HTTPRoute`)
+
+```yaml
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backstage-external-route
+  namespace: backstage
+spec:
+  parentRefs:
+    - kind: Gateway
+      name: external-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/events/gcs
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /blocked-internal-route
+      backendRefs:
+        - name: backstage
+          port: 7007
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backstage
+          port: 7007
+```
+
+###### 2. Cloud Armor Edge Policy (Deny 403)
+
+```bash
+gcloud compute security-policies rules create 1000 \
+    --security-policy=backstage-armor-policy \
+    --expression="request.path.matches('/api/events/gcs')" \
+    --action="deny-403"
+```
+
+###### 3. Kubernetes NetworkPolicy (VPC Namespace Isolation)
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-eventarc-port-80
+  namespace: backstage
+spec:
+  podSelector:
+    matchLabels:
+      app: backstage
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: ['eventarc-gcs-techdocs-trigger']
+      ports:
+        - protocol: TCP
+          port: 80
+    - ports:
+        - protocol: TCP
+          port: 7007
+```
+
 ---
 
-## Section 3: Federated Hybrid Search Router Deployment
+## Section 3: Federated Hybrid Search Router
 
 Deploying the hybrid search router orchestrates multi-engine search across registered sub-engines.
 
@@ -1045,7 +1161,7 @@ backend.add(
 backend.start();
 ```
 
-### Blueprint Configuration
+### Configuration
 
 Configure the hybrid router and sub-engine mappings in `app-config.yaml` to route `software-catalog` queries to Typesense (for typo-tolerant keyword search) and `techdocs` queries to Vertex AI Search (for semantic vector search):
 
@@ -1094,11 +1210,9 @@ search:
 
 ---
 
-## Section 4: Authoring & Registering Custom Search Sub-Engines
+## Section 4: Integrating Search Backends with the Hybrid Search Router
 
-Custom search sub-engines extend the hybrid router by implementing Backstage's `SearchEngine` interface and registering via `hybridSearchEngineRegistryExtensionPoint`.
-
-### Implementing the `SearchEngine` Interface
+Other search backends can be integrated with the hybrid search router by implementing Backstage's `SearchEngine` interface and registering via `hybridSearchEngineRegistryExtensionPoint`.
 
 Author a custom engine class extending Backstage's `SearchEngine` abstract class:
 
@@ -1110,7 +1224,7 @@ import {
 } from '@backstage/plugin-search-backend-node';
 import { Readable, Writable } from 'stream';
 
-export class CustomVectorSearchEngine extends SearchEngine {
+export class CustomSearchEngine extends SearchEngine {
   async query(query: SearchQuery): Promise<SearchResultSet> {
     // Translate SearchQuery terms & filters into native vector DB API requests
     // Map response hits to Backstage SearchResult format
@@ -1132,27 +1246,25 @@ export class CustomVectorSearchEngine extends SearchEngine {
 }
 ```
 
-### Registering via Extension Point
-
-Author a new backend system module (`createBackendModule`) that injects the custom engine into `hybridSearchEngineRegistryExtensionPoint`:
+Then create a new backend system module that injects the custom engine into `hybridSearchEngineRegistryExtensionPoint`:
 
 ```typescript
 import { createBackendModule } from '@backstage/backend-plugin-api';
 import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { CustomVectorSearchEngine } from './CustomVectorSearchEngine';
+import { CustomSearchEngine } from './CustomSearchEngine';
 
 export const customSearchModule = createBackendModule({
   pluginId: 'search',
-  moduleId: 'custom-vector-engine',
+  moduleId: 'custom-search-engine',
   register(reg) {
     reg.registerInit({
       deps: {
         hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
       },
       async init({ hybridRegistry }) {
-        const engine = new CustomVectorSearchEngine();
-        // Register the engine under the identifier 'custom-vector'
-        hybridRegistry.registerEngine('custom-vector', engine);
+        const engine = new CustomSearchEngine();
+        // Register the engine under the identifier 'custom-search-engine'
+        hybridRegistry.registerEngine('custom-search-engine', engine);
       },
     });
   },
@@ -1163,126 +1275,7 @@ Once registered, map custom document categories to it in `app-config.yaml`:
 
 ---
 
-## Section 5: Webhook Networking & Security Hardening
-
-Securing the `/api/events/gcs` webhook path requires aligning network routing constraints with edge security policies.
-
-### Webhook Parameter Reference Matrix
-
-| Parameter                                                        | Type / Required             | Default   | Description                                                                                                |
-| :--------------------------------------------------------------- | :-------------------------- | :-------- | :--------------------------------------------------------------------------------------------------------- |
-| **`events.modules.gcsEventarcWebhook.oidc.enabled`**             | `boolean` (Optional)        | `false`   | Enables Google OIDC Bearer token verification (`true` for Cloud Run; `false` for private GKE VPC routing). |
-| **`events.modules.gcsEventarcWebhook.oidc.audience`**            | `string` (Required if OIDC) | –         | Expected OIDC target audience URL (e.g., `https://backstage.example.com/api/events/gcs`).                  |
-| **`events.modules.gcsEventarcWebhook.oidc.serviceAccountEmail`** | `string` (Optional)         | –         | Expected service account email signing the incoming OIDC Bearer token.                                     |
-| **`events.modules.gcsEventarcWebhook.maxConcurrency`**           | `number` (Optional)         | `5`       | Maximum concurrent deletion operations permitted during delta reconciliation.                              |
-| **`events.modules.gcsEventarcWebhook.batchSize`**                | `number` (Optional)         | `100`     | Maximum number of documents imported per batch request to Vertex AI Search (1–100).                        |
-| **`events.modules.gcsEventarcWebhook.payloadSizeLimit`**         | `string` (Optional)         | `'100kb'` | Express body-parser size limit for incoming GCS Eventarc push notifications.                               |
-
-### Backstage Kubernetes Service Mapping (Port 80 Constraint)
-
-Configure the Kubernetes `Service` manifest for Backstage to expose port 80 mapped to container target port 7007:
-
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: backstage
-  namespace: backstage
-spec:
-  type: ClusterIP
-  ports:
-    - port: 7007
-      targetPort: 7007
-      name: http
-    - port: 80
-      targetPort: 7007
-      name: eventarc # Maps Eventarc port 80 traffic to container port 7007
-  selector:
-    app: backstage
-```
-
-### Edge Ingress Protection Policies
-
-Because OIDC verification is disabled for GKE deployments, public access to `/api/events/gcs` must be blocked at the edge layer to prevent unauthorized index updates.
-
-Operators can enforce security using one of the following controls:
-
-#### 1. GKE Gateway API Path Rewrite (`HTTPRoute`)
-
-```yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: backstage-external-route
-  namespace: backstage
-spec:
-  parentRefs:
-    - kind: Gateway
-      name: external-gateway
-  rules:
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/events/gcs
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplaceFullPath
-              replaceFullPath: /blocked-internal-route
-      backendRefs:
-        - name: backstage
-          port: 7007
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: backstage
-          port: 7007
-```
-
-#### 2. Cloud Armor Edge Policy (Deny 403)
-
-```bash
-gcloud compute security-policies rules create 1000 \
-    --security-policy=backstage-armor-policy \
-    --expression="request.path.matches('/api/events/gcs')" \
-    --action="deny-403"
-```
-
-#### 3. Kubernetes NetworkPolicy (VPC Namespace Isolation)
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: isolate-eventarc-port-80
-  namespace: backstage
-spec:
-  podSelector:
-    matchLabels:
-      app: backstage
-  policyTypes:
-    - Ingress
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: ['eventarc-gcs-techdocs-trigger']
-      ports:
-        - protocol: TCP
-          port: 80
-    - ports:
-        - protocol: TCP
-          port: 7007
-```
-
----
-
-## Section 6: Operational Runbooks & Diagnostics
+## Section 5: Operational Runbooks & Diagnostics
 
 ### Local Development & Webhook Testing
 
