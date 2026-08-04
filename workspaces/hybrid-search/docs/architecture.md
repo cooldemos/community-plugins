@@ -120,22 +120,22 @@ When a developer enters a search query into the Backstage portal user interface,
 ```
 
 1. **Client Dispatch (`GET /api/search/query`)**  
-   The frontend initiates an HTTP request containing search keywords, target document categories (`types[]`), security context, and pagination state.
+   The frontend issues an HTTP `GET /api/search/query` request containing search terms, document category filters, entity filters, and pagination parameters.
 
 2. **Backend Authentication & Engine Resolution**  
-   The core search plugin (`@backstage/plugin-search-backend`) validates the caller, parses query parameters, and retrieves the active `SearchEngine` instance from the `SearchEngineRegistry`.
+   The search backend plugin authenticates the request, parses query parameters, and retrieves the active `SearchEngine` instance from the `SearchEngineRegistry`.
 
 3. **Query Translation (`SearchQuery` → Native DSL)**  
-   The resolved engine translates the generic `SearchQuery` contract into backend-native syntax (such as Elasticsearch JSON DSL, Typesense parameters, or PostgreSQL full-text queries).
+   The active `SearchEngine` receives the abstract `SearchQuery` object and translates its terms and filters into engine-native query syntax (such as Elasticsearch JSON DSL, SQL, or Lunr term queries).
 
 4. **Target Execution & Retrieval**  
-   The engine executes the query against the underlying search datastore, returning raw match objects, scoring metrics, and field highlights.
+   The `SearchEngine` dispatches the translated query to the underlying search service or datastore to fetch matching records.
 
 5. **Response Normalization (`SearchResultSet`)**  
-   The engine transforms vendor-specific response payloads into Backstage's standardized `SearchResultSet` structure, normalizing field names, text snippets, and scores.
+   The raw search response—containing matching documents, relevance scores, and snippet highlights—is mapped into Backstage's standardized `SearchResult` payload structure.
 
 6. **HTTP Response Serialization**  
-   The backend serializes the normalized results into a JSON payload (`200 OK`) containing matching items, total result counts, and pagination cursors.
+   The search backend returns a JSON payload to the client containing the normalized search results, total result count, and pagination cursors.
 
 ## Section 3: Document Ingestion
 
