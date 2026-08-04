@@ -468,11 +468,7 @@ To maintain index consistency, the Vertex AI Search module runs a background cle
 
 #### Task Activation & Scheduling Guardrails
 
-The sweeper task is managed by Backstage's `SchedulerService` and operates under strict guardrails to prevent resource contention and startup race conditions:
-
-- **Activation Condition**: The task runs automatically when decoupled ingestion is active and cleanup is enabled. If direct in-process collator indexing is active, the sweeper disables itself because collators handle catalog synchronization natively.
-- **Configurable Cadence**: The sweeper executes on a low-frequency schedule (defaulting to every two hours) to minimize operational overhead on backend services.
-- **Startup Bootstrapping Delay**: Enforces a mandatory initial startup delay (defaulting to two minutes) to ensure `CatalogService` finishes bootstrapping before orphan evaluation begins.
+Managed by Backstage's `SchedulerService`, the sweeper task enforces strict operational guardrails to prevent resource contention and startup race conditions. The background job activates automatically whenever decoupled ingestion is configured with cleanup enabled; if direct in-process collator indexing is active instead, the sweeper gracefully disables itself to avoid redundant work. To minimize operational overhead, reconciliation executes on a low-frequency cadence (defaulting to every two hours). Additionally, the task enforces an initial startup delay (defaulting to two minutes) to ensure the `CatalogService` completes its full bootstrapping sequence before orphan evaluation begins.
 
 #### Sweep Reconciliation Workflow
 
