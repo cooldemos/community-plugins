@@ -1,40 +1,39 @@
 # Hybrid Search Plugins & Modules
 
-This directory houses a collection of highly flexible search modules for Backstage. It supports standalone deployment of modern search backends (e.g. structured Typesense search or semantic Vertex AI Search) as primary engines, alongside an optional Hybrid Search Router that orchestrates parallel federated queries and dynamic result merging.
+This directory contains four Backstage backend modules built for the New Backend System (`@backstage/backend-plugin-api`). Each search backend can run standalone as the portal's sole search engine or attach as a sub-engine under the Hybrid Search Router.
 
-## 🏛️ Core Architectural Pillars (Grounded in Code)
+## Core Architectural Pillars
 
-Our workspace is built around three core architectural pillars:
+### 1. Dynamic Sub-Engine Registry via Extension Points
 
-### 1. Dynamic Engine Registry via Extension Points
+Backstage's core search plugin exposes `searchEngineRegistryExtensionPoint`, which accepts only one primary search engine per portal. To support multiple backends without modifying Backstage core, [`search-backend-module-hybrid`](./search-backend-module-hybrid/README.md) claims that primary slot and exposes **`hybridSearchEngineRegistryExtensionPoint`**.
 
-To maintain decoupling, the router module [`search-backend-module-hybrid`](./search-backend-module-hybrid) does not hardcode sub-engines. Instead, it registers them dynamically during backend startup using a custom Backstage Extension Point: **`hybridSearchRegistryExtensionPoint`**.
-Specialized backend search modules plug into this extension point to self-register:
+Downstream search modules register themselves into `hybridSearchEngineRegistryExtensionPoint` during backend initialization via their `/hybrid` entry points:
 
-- **Vertex AI Search Engine Module** ([`search-backend-module-vertexai`](./search-backend-module-vertexai))
-- **Typesense Search Engine Module** ([`search-backend-module-typesense`](./search-backend-module-typesense))
+- **Vertex AI Search Hybrid Module**: `@backstage-community/plugin-search-backend-module-vertexai/hybrid`
+- **Typesense Hybrid Module**: `@backstage-community/plugin-search-backend-module-typesense/hybrid`
 
-### 2. Query Orchestration & Consolidation Strategies
+### 2. Fault-Isolated Parallel Dispatch & Score Normalization
 
-When a user executes a search, the **`HybridSearchEngine`** queries all matching registered backends in parallel and merges the results based on the configured strategy:
+When a search request spans multiple categories (or omits category filters on the portal search page), `HybridSearchEngine` fans the query out across all matching sub-engines concurrently via `Promise.allSettled`. Single-engine failures are logged and isolated so healthy backends still return results.
 
-- `interleave` (Default): Blends search results round-robin style to give developers a diverse first page of mixed results.
-- `score-normalized-sort`: Normalizes search relevance scores from different engines to a `[0, 1]` scale and sorts them descending.
+Results from heterogeneous engines are combined using one of two configurable strategies:
 
-### 3. Event-Driven Ingestion & Reconciliation (Vertex AI & TechDocs Specific)
+- `interleave` (Default): Alternates results round-robin by rank position so every category receives balanced visibility on page one.
+- `score-normalized-sort`: Scales each engine's raw scores onto `[0.0, 1.0]` relative to the top score in that batch (falling back to linear rank decay when an engine omits numerical scores) and sorts globally descending.
 
-For TechDocs document indexing in Vertex AI Search, synchronization is real-time, decentralized, and event-driven:
+### 3. Flexible Ingestion & Reconciliation
 
-- **Real-time Webhook**: Listens to bucket upload notifications from Google Eventarc to trigger document indexing immediately upon publication.
-- **Throttled Batch Ingestion**: Processes changed files, maps them to stable document IDs, and performs batch imports within API rate limits to protect resource bounds.
-- **Catalog Metadata Enrichment**: Automatically associates indexed documents with their Backstage catalog metadata to enrich search results with owner, lifecycle, and component annotations.
-- **Delta Reconciliation**: Compares current and historic index states to automatically detect and purge stale or deleted pages.
+The workspace supports both in-process collator reconciliation and offloaded event-driven ingestion for Vertex AI Search:
 
-## 📦 Available Plugins & Modules
+- **Direct Reconciling Collator Stream (`BatchSearchEngineIndexer`)**: When `indexing.enabled: true`, `VertexAISearchEngine` snapshots existing datastore `contentHash` digests via explicit pagination, imports only new or changed documents with transient gRPC retry/backoff, and evicts stale documents only when the collator stream ends cleanly without errors.
+- **Event-Driven GCS Eventarc Webhook & Orphan Sweeper**: When `indexing.enabled: false` for `techdocs`, [`events-backend-module-gcs-eventarc`](./events-backend-module-gcs-eventarc/README.md) ingests `search_index.json` uploads from Cloud Storage in real time, enriches pages with canonical Software Catalog metadata, verifies LRO `failureCount` before running generation delta deletions, and pairs with `techdocs-orphan-sweeper` to clean up deleted catalog entities.
 
-| Plugin / Module                    | Directory                                                                              | Purpose                                                                                                                                                                                                                      |
-| :--------------------------------- | :------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hybrid Search Router**           | [`search-backend-module-hybrid`](./search-backend-module-hybrid/README.md)             | **Dynamic Orchestrator**: Registers sub-engines through its registry extension point, delegates incoming search queries, and consolidates search results.                                                                    |
-| **Vertex AI Search Engine Module** | [`search-backend-module-vertexai`](./search-backend-module-vertexai/README.md)         | **Semantic Search**: Integrates Google Cloud Vertex AI Search. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Translates Backstage queries to Discovery Engine API calls.        |
-| **Typesense Search Engine Module** | [`search-backend-module-typesense`](./search-backend-module-typesense/README.md)       | **Structured Search**: Integrates Typesense capabilities. Can run standalone as the primary engine or register as a sub-engine to the Hybrid Router. Indexes and searches structured Backstage entities with typo-tolerance. |
-| **GCS Eventarc TechDocs Webhook**  | [`events-backend-module-gcs-eventarc`](./events-backend-module-gcs-eventarc/README.md) | **Cloud-Native Ingestion**: Receives bucket upload alerts from Google Eventarc to trigger TechDocs search index parsing and ingestion into Vertex AI Search.                                                                 |
+## Available Plugins & Modules
+
+| Plugin / Module                    | Directory                                                                              | Purpose                                                                                                                                                                     |
+| :--------------------------------- | :------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hybrid Search Router**           | [`search-backend-module-hybrid`](./search-backend-module-hybrid/README.md)             | **Dynamic Orchestrator**: Exposes `hybridSearchEngineRegistryExtensionPoint`, routes queries by document type, and merges federated result sets.                            |
+| **Vertex AI Search Engine Module** | [`search-backend-module-vertexai`](./search-backend-module-vertexai/README.md)         | **Semantic Search**: Queries Google Cloud Discovery Engine Data Stores and Search Apps, reconciles direct collator streams via `contentHash`, and sweeps orphaned TechDocs. |
+| **Typesense Search Engine Module** | [`search-backend-module-typesense`](./search-backend-module-typesense/README.md)       | **Structured & Vector Search**: Auto-provisions `backstage_<type>` collections, batch-upserts collator streams, and executes typo-tolerant keyword or vector queries.       |
+| **GCS Eventarc TechDocs Webhook**  | [`events-backend-module-gcs-eventarc`](./events-backend-module-gcs-eventarc/README.md) | **Cloud-Native Ingestion**: Processes Google Eventarc `object.v1.finalized` webhooks to synchronize TechDocs indices into Vertex AI Search out-of-band.                     |

@@ -1,278 +1,63 @@
 # GCS Eventarc TechDocs Ingress Backend Module for Backstage (`@backstage-community/plugin-events-backend-module-gcs-eventarc`)
 
-This custom backend module implements a webhook ingress point that listens to Google Cloud Storage (GCS) object finalize events via Google Eventarc, automatically triggering incremental ingestion of **TechDocs** search indices into Google Vertex AI Search.
+`@backstage-community/plugin-events-backend-module-gcs-eventarc` mounts an event-driven webhook at `/api/events/gcs` that listens for Google Cloud Storage (GCS) `google.cloud.storage.object.v1.finalized` notifications delivered by Google Eventarc. Whenever a CI/CD pipeline publishes a new `search_index.json` for a TechDocs site, the module enriches the pages with Backstage Software Catalog metadata, imports them into Google Cloud Vertex AI Search, and purges removed pages by comparing against the previous GCS object generation.
 
 ---
 
-## ⚡ Ingestion Workflow
+## Ingestion Architecture & Sequence
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant GCS as GCS Storage Bucket
-    participant EA as Google Eventarc (Trigger)
-    participant FWD as GKE Managed Eventarc Forwarder Pod
-    participant BS as Backstage Webhook Endpoint (/api/events/gcs)
-    participant Cat as Backstage Catalog Service
-    participant VAI as Vertex AI Search (Discovery Engine)
-
-    Note over GCS: File search_index.json finalized
-    GCS-->>EA: Trigger event (object.v1.finalized)
-    EA->>FWD: Publish Event to managed Pub/Sub Topic
-    Note over FWD: Forwarder Pod pulls from Pub/Sub
-    FWD->>BS: Private HTTP POST (Service port 80 -> Pod port 7007)
-    Note over BS: Webhook verifies OIDC (if enabled)
-    BS->>BS: Publish 'gcs-notifications' to Internal Event Bus
-
-    Note over BS: Subscriber starts async processing
-    BS->>GCS: Download new search_index.json (current generation)
-    GCS-->>BS: Return current index documents
-    BS->>Cat: Query component entity details (owner, lifecycle, type, annotations)
-    Cat-->>BS: Return component catalog metadata
-    Note over BS: Enrich documents with catalog metadata
-    BS->>VAI: Ingest enriched documents in parallel (inline imports)
-
-    BS->>GCS: Query previous generation ID & download previous search_index.json
-    GCS-->>BS: Return historical index documents
-    Note over BS: Compute delta (identify removed pages)
-    BS->>VAI: Purge stale documents in parallel (throttled deletions)
+```text
+┌───────────────────────────────────────────────────────────────────────────────────────────┐
+│                           Decoupled Eventarc Ingestion Sequence                           │
+├───────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                           │
+│  CI/CD Pipeline ──► Upload search_index.json ──► GCS TechDocs Bucket                      │
+│                                                        │                                  │
+│                                                        ▼                                  │
+│                                     Google Eventarc Trigger                               │
+│                                  (object.v1.finalized event)                              │
+│                                                        │                                  │
+│                                                        ▼                                  │
+│                                 Private GKE / Cloud Run Webhook                           │
+│                                   (HTTP POST /api/events/gcs)                             │
+│                                                        │                                  │
+│                                                        ▼ (Verify OIDC & Return 200 OK)    │
+│                                   Internal Backstage Event Bus                            │
+│                                                        │                                  │
+│                                                        ▼ (Async 'gcs-notifications' Sub)  │
+│                                  1. Download search_index.json (Gen N)                    │
+│                                  2. Enrich via CatalogService (canonical entity.kind)     │
+│                                  3. Compute Deterministic MD5 Document IDs                │
+│                                  4. Import Batches & Verify metadata.failureCount == 0    │
+│                                  5. Diff vs Gen N-1 & Delete Removed Page IDs             │
+│                                                                                           │
+└───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
----
+### Synchronization Guarantees
 
-## 🔌 Webhook Endpoint: `/api/events/gcs`
-
-Exposes a webhook endpoint mounted on the events router.
-
-- **Event Type**: Listens for `google.cloud.storage.object.v1.finalized` events (sent automatically when a file is created or updated in GCS).
-- **Payload**: Receives the GCS file metadata (bucket name, file path, and generation ID) to identify the changed asset.
-
----
-
-## 🔐 Authentication & Webhook Security
-
-To prevent spoofing or unauthorized ingestion, the `/api/events/gcs` webhook supports **Google OIDC ID Token verification** (which can be enabled or disabled in your configuration):
-
-When enabled:
-
-1.  The webhook intercepts requests and extracts the `Authorization: Bearer <ID_TOKEN>` header.
-2.  Using Google's library (`google-auth-library`), it verifies:
-    - **Signature & Validity**: The token is valid and cryptographically signed by Google.
-    - **Issuer**: Must match `https://accounts.google.com`.
-    - **Audience**: Matches the Backstage base path: `${baseUrl}/api/events/gcs`.
-    - **Service Account Verification**: If configured, it ensures the token belongs exclusively to the expected Eventarc service account email (`events.modules.gcsEventarcWebhook.oidc.serviceAccountEmail`).
+1. **Non-Blocking Webhook Ingress**: `/api/events/gcs` validates incoming headers (and Google OIDC ID tokens when enabled), publishes `gcs-notifications` onto Backstage's internal `EventsService`, and immediately responds `200 OK` so user traffic is not blocked.
+2. **Canonical Catalog Enrichment**: For each `namespace/kind/name/search_index.json` object, the subscriber looks up the parent entity via `CatalogService` and enriches every page with `owner`, `lifecycle`, `componentType`, `annotations`, canonical `kind` (`entity?.kind || kind`, such as `'Component'` or `'API'` so case-sensitive Discovery Engine filters match), and lowercase `authorization.resourceRef` (`<kind>:<namespace>/<name>`).
+3. **Deterministic Document IDs**: Page IDs are derived from `md5("/docs/<namespace>/<kind>/<name>/<cleanLocation>")` (lowercased entity coordinates), ensuring in-place upserts across rebuilds without changing existing document IDs.
+4. **Partial Failure Guard Before Delta Deletions**: Inline `importDocuments` batches (`<= 100` docs, bounded by `maxConcurrency`) are awaited via `operation.promise()` and checked for `Number(metadata?.failureCount ?? 0) > 0`. If any document fails to import, the module logs `response.errorSamples` and aborts **before** running GCS generation delta deletions so failed imports never cause valid pages to be deleted.
+5. **GCS Generation Delta Cleanup**: When GCS Object Versioning is enabled on the TechDocs bucket, the subscriber fetches the immediately preceding object generation, computes removed page IDs, and deletes only obsolete pages from Vertex AI Search.
 
 ---
 
-## 🌐 GKE Internal Routing & Constraints
+## Authentication & GKE Routing Constraints
 
-When an Eventarc trigger is configured with a GKE Service destination, Eventarc delivers events privately and internally directly to your Kubernetes Service within the GKE cluster:
+`/api/events/gcs` supports two security postures depending on how Eventarc delivers events:
 
-1. Google's Eventarc agent automatically provisions a dedicated namespace `eventarc-<trigger-name>-<hash>` and deploys a managed **`gke-forwarder`** pod inside it.
-2. The forwarder pod privately subscribes to Eventarc's Google-managed Pub/Sub topic, pulls events, and posts them **internally** inside the VPC network directly to your GKE service: `http://backstage.backstage.svc.cluster.local/api/events/gcs`.
+- **Cloud Run / Public HTTPS Destinations (`oidc.enabled: true`)**: Eventarc attaches a signed `Authorization: Bearer <ID_TOKEN>` header. The middleware verifies the Google signature, `https://accounts.google.com` issuer, expected `oidc.audience`, and optional `oidc.serviceAccountEmail`.
+- **Private GKE Service Destinations (`oidc.enabled: false`)**: Eventarc deploys a managed `gke-forwarder` pod inside an `eventarc-<trigger-name>-<hash>` namespace that pulls from Pub/Sub and posts directly over cluster-internal HTTP without generating OIDC tokens. Set `oidc.enabled: false` and block external ingress to `/api/events/gcs` at the network/edge layer.
 
 > [!IMPORTANT]
 >
-> **The Port 80 Constraint**: The GKE destination block for GCP Eventarc strictly routes events to port `80` and does not accept custom target port configurations. To support this, you **must** expose port `80` (Service port) in your Backstage Kubernetes Service configuration and map it to your container's port `7007` (Pod port) (see the [Kubernetes Service Mapping](#kubernetes-service-mapping) below).
+> **GKE Port 80 Requirement**: Eventarc's GKE destination block always delivers HTTP requests to Service port `80`. Expose port `80` on your Backstage Kubernetes `Service` mapped to container port `7007`.
 
-> [!WARNING]
->
-> **Google OIDC Configuration in GKE**:
-> Google OIDC ID Token verification is fully implemented in the module and can be enabled or disabled in configuration (`events.modules.gcsEventarcWebhook.oidc.enabled`). However, it **must** be disabled (`false`) when using GKE private routing.
->
-> **The Reason**: Google Eventarc only generates and attaches Google OIDC ID tokens when delivering to public HTTPS endpoints, Cloud Run, or Cloud Functions. For GKE service destinations, Eventarc uses an internal cluster-local **gke-forwarder** pod that pulls from Pub/Sub and makes a direct HTTP POST request to your service. Because this forwarder pod runs locally within your VPC and cannot generate or attach Google OIDC ID tokens, the webhook will reject Eventarc requests if OIDC verification is enabled. Security for GKE internal endpoints should instead be handled at the network level (e.g., using Kubernetes `NetworkPolicies`).
+### Kubernetes Service & Network Hardening (GKE)
 
-> [!NOTE]
->
-> **Why the OIDC Verification Code is Retained**:
-> Despite being disabled for GKE internal VPC routing, the OIDC token verification logic is fully supported and retained in the codebase to support:
->
-> - **Public Cloud Run / Serverless Deployments**: If Backstage is deployed on Google Cloud Run (where the endpoint is exposed as a public HTTPS URL), enabling OIDC is **highly recommended** (and often mandatory) to cryptographically verify that all incoming webhooks originate genuinely from your Google Cloud Eventarc trigger, preventing public index spoofing.
-> - **Future-Proofing**: If the GKE Eventarc forwarder introduces support for token forwarding in the future, verification can be turned back on instantly via a config change (`enabled: true`) without requiring code modifications.
-
----
-
-## 🛡️ Securing the Webhook Endpoint at the Network Level
-
-Because Google OIDC token validation must be disabled when using private GKE Eventarc routing, the webhook endpoint `/api/events/gcs` is exposed without application-level authentication.
-
-To prevent spoofing or unauthorized ingestion attempts, you **must** block external access to this path at the network/ingress layer. Here are the three main ways to enforce this in common environments:
-
-### 1. NGINX Ingress Controller (Path Blocking)
-
-If you use NGINX Ingress, you can return a `403 Forbidden` response for the `/api/events/gcs` path at the ingress level:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: backstage-ingress
-  namespace: backstage
-  annotations:
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      location /api/events/gcs {
-        deny all;
-        return 403;
-      }
-spec:
-  # ... standard ingress spec ...
-```
-
----
-
-### 2. GKE Gateway API with Google Cloud Armor (Edge 403 Blocking)
-
-For the most robust protection, you can drop requests at the Google Cloud Load Balancer edge with a `403 Forbidden` using a Cloud Armor policy.
-
-1. **Create the Cloud Armor Security Policy in GCP**:
-
-   ```bash
-   gcloud compute security-policies create backstage-armor-policy
-   gcloud compute security-policies rules create 1000 \
-       --security-policy=backstage-armor-policy \
-       --expression="request.path.matches('/api/events/gcs')" \
-       --action="deny-403"
-   ```
-
-2. **Bind the Policy to GKE Backend using a `GCPBackendPolicy`**:
-   ```yaml
-   apiVersion: networking.gke.io/v1
-   kind: GCPBackendPolicy
-   metadata:
-     name: backstage-security-policy
-     namespace: backstage
-   spec:
-     default:
-       securityPolicy: backstage-armor-policy
-     targetRef:
-       group: ''
-       kind: Service
-       name: backstage
-   ```
-
----
-
-### 3. GKE Gateway API (URL Rewrite to 404)
-
-Alternatively, you can use GKE Gateway's `URLRewrite` filter to rewrite requests targeting `/api/events/gcs` to a non-existent path before sending them to Backstage. When Backstage receives this rewritten route, it will automatically return a `404 Not Found`:
-
-```yaml
-apiVersion: gateway.networking.k8s.io/v1
-kind: HTTPRoute
-metadata:
-  name: backstage-route
-  namespace: backstage
-spec:
-  parentRefs:
-    - group: gateway.networking.k8s.io
-      kind: Gateway
-      name: external-http-gateway
-  rules:
-    # Match the webhook path, rewrite it to an invalid path, and send to Backstage
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /api/events/gcs
-      filters:
-        - type: URLRewrite
-          urlRewrite:
-            path:
-              type: ReplaceFullPath
-              replaceFullPath: /invalid-blocked-route
-      backendRefs:
-        - name: backstage
-          port: 7007
-    # Route all other Backstage traffic normally
-    - matches:
-        - path:
-            type: PathPrefix
-            value: /
-      backendRefs:
-        - name: backstage
-          port: 7007
-```
-
----
-
-### 4. Kubernetes `NetworkPolicy` (Internal VPC Isolation)
-
-In addition to Gateway-level blocks, you should apply a `NetworkPolicy` to ensure port `80` (the GKE Eventarc forwarder destination) is isolated and can only receive requests from Eventarc's managed namespaces:
-
-```yaml
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: restrict-webhook-to-eventarc-only
-  namespace: backstage
-spec:
-  podSelector:
-    matchLabels:
-      app: backstage
-  policyTypes:
-    - Ingress
-  ingress:
-    # Allow internal Eventarc forwarders on port 80
-    - from:
-        - namespaceSelector:
-            matchExpressions:
-              - key: kubernetes.io/metadata.name
-                operator: In
-                values: ['eventarc-xxxx'] # Replace with your dynamic Eventarc namespace name
-      ports:
-        - protocol: TCP
-          port: 80
-    # Allow standard ingress/gateway traffic on port 7007
-    - ports:
-        - protocol: TCP
-          port: 7007
-```
-
----
-
-## 🔄 Ingestion, Enrichment & Reconciliation
-
-1.  **Catalog Metadata Enrichment**: When a GCS notification arrives, the webhook resolves the matching component entity in the Backstage Software Catalog (using the `CatalogService`). It extracts core catalog fields:
-    - `owner` (entity's `spec.owner`)
-    - `lifecycle` (entity's `spec.lifecycle`)
-    - `componentType` (entity's `spec.type`)
-    - `annotations` (entity's `metadata.annotations`)
-      These fields are merged into each page's search document payload, enabling robust faceted filtering on the search frontend.
-2.  **Stable ID Mapping**: Documents are mapped to stable, deterministic **MD5-hashed IDs** generated from namespace, kind, name, and page path.
-3.  **Delta Comparison**: The webhook reads the **immediately previous generation** of `search_index.json` from GCS versioning history.
-4.  **Reconciliation**: It compares the previous list of document IDs against the new generation to calculate which pages were deleted, and purges those stale document IDs from Vertex AI Search to keep the index in sync with GCS.
-
----
-
-## 🔌 Installation
-
-First, install the package in your Backstage backend package:
-
-```bash
-yarn --cwd packages/backend add @backstage-community/plugin-events-backend-module-gcs-eventarc
-```
-
-Then, add it to your `packages/backend/src/index.ts` alongside any other plugins/modules:
-
-```typescript
-// packages/backend/src/index.ts
-import { createBackend } from '@backstage/backend-defaults';
-
-const backend = createBackend();
-
-// ... other plugins ...
-
-backend.add(
-  import('@backstage-community/plugin-events-backend-module-gcs-eventarc'),
-);
-
-backend.start();
-```
-
----
-
-## 📦 Kubernetes Service Mapping
-
-To route private Eventarc traffic (port 80) and standard developer traffic (port 7007) to the Backstage container:
+#### 1. Backstage `Service` Mapping Port 80 -> 7007
 
 ```yaml
 apiVersion: v1
@@ -284,134 +69,217 @@ spec:
   type: ClusterIP
   ports:
     - port: 7007
-      targetPort: http
+      targetPort: 7007
       protocol: TCP
       name: http
     - port: 80
-      targetPort: http
+      targetPort: 7007
       protocol: TCP
-      name: eventarc # Map port 80 for internal GKE Eventarc Forwarder routing
+      name: eventarc
   selector:
     app: backstage
 ```
 
+#### 2. Edge Blocking (`HTTPRoute`, Cloud Armor, or NGINX Ingress)
+
+Block public requests to `/api/events/gcs` at your external load balancer or ingress controller:
+
+```yaml
+# Option A: GKE Gateway API HTTPRoute rewrite
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: backstage-external-route
+  namespace: backstage
+spec:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: external-http-gateway
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/events/gcs
+      filters:
+        - type: URLRewrite
+          urlRewrite:
+            path:
+              type: ReplaceFullPath
+              replaceFullPath: /blocked-internal-route
+      backendRefs:
+        - name: backstage
+          port: 7007
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: backstage
+          port: 7007
+```
+
+```bash
+# Option B: Google Cloud Armor edge deny rule
+gcloud compute security-policies create backstage-armor-policy
+gcloud compute security-policies rules create 1000 \
+  --security-policy=backstage-armor-policy \
+  --expression="request.path.matches('/api/events/gcs')" \
+  --action="deny-403"
+```
+
+```yaml
+# Option C: NGINX Ingress path block
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backstage-ingress
+  namespace: backstage
+  annotations:
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      location /api/events/gcs {
+        deny all;
+        return 403;
+      }
+spec: {}
+```
+
+#### 3. Kubernetes `NetworkPolicy` (Cluster-Internal Port 80 Isolation)
+
+Restrict port `80` ingress exclusively to the managed Eventarc forwarder namespace (named `eventarc-<trigger-name>-<hash>` in GKE; verify the exact namespace via `kubectl get ns | grep '^eventarc-'`):
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-eventarc-port-80
+  namespace: backstage
+spec:
+  podSelector:
+    matchLabels:
+      app: backstage
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values: ['eventarc-gcs-techdocs-trigger'] # Match your GKE eventarc-<trigger>-<hash> namespace
+      ports:
+        - protocol: TCP
+          port: 80
+    - ports:
+        - protocol: TCP
+          port: 7007
+```
+
 ---
 
-## ⚙️ Configuration
+## Installation
 
-Configure the GCS Eventarc webhook and its dependent Vertex AI Search engine in your `app-config.yaml` as follows:
+Install the module in `packages/backend`:
+
+```bash
+yarn --cwd packages/backend add @backstage-community/plugin-events-backend-module-gcs-eventarc
+```
+
+Register the events backend plugin and the webhook module in `packages/backend/src/index.ts`:
+
+```typescript
+// packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-events-backend'));
+backend.add(
+  import('@backstage-community/plugin-events-backend-module-gcs-eventarc'),
+);
+
+backend.start();
+```
+
+---
+
+## Configuration
 
 > [!IMPORTANT]
 >
-> **Conflict with Local Indexing**:
-> This webhook module **cannot** be active when direct local indexing is enabled for TechDocs (`search.engines.vertexai.types.techdocs.indexing.enabled: true` or globally `search.engines.vertexai.indexing.enabled: true`).
-> If both are enabled, the backend will fail to start and throw a `BackendStartupError` during initialization. You must either disable local techdocs indexing in configuration or remove the webhook module (`eventsModuleGcsEventarcWebhook`) from your backend codebase.
+> **Mutual Exclusion with Direct TechDocs Indexing**:
+> `eventsModuleGcsEventarcWebhook` throws an error at startup if TechDocs direct collator indexing is enabled (`search.engines.vertexai.types.techdocs.indexing.enabled: true` or inherited from `search.engines.vertexai.indexing.enabled: true`). Keep `techdocs.indexing.enabled: false` when using this module.
 
 ```yaml
-# 1. Webhook Ingress Configuration
 events:
   modules:
     gcsEventarcWebhook:
       oidc:
-        enabled: true # Set to false in GKE environments, true for public/development routes
-        audience: ${baseUrl}/api/events/gcs
-        serviceAccountEmail: ${gcpServiceAccount}
-      # Optional tuning parameters:
-      maxConcurrency: 5 # Maximum concurrent deletion or import operations (default: 5)
-      payloadSizeLimit: '100kb' # Express body size limit for webhook payload (default: '100kb')
-      batchSize: 100 # Maximum documents per inline import request (default: 100, max: 100)
+        enabled: true # Set false for GKE internal destinations; true for Cloud Run / HTTPS
+        audience: ${BACKEND_BASE_URL}/api/events/gcs
+        serviceAccountEmail: ${EVENTARC_TRIGGER_SA_EMAIL}
+      maxConcurrency: 5
+      payloadSizeLimit: '100kb'
+      batchSize: 100
 
-# 2. Dependent Vertex AI Search Engine Configuration (Required for Sync)
 search:
   engines:
     vertexai:
       types:
         techdocs:
+          indexing:
+            enabled: false
           datastore:
-            projectId: your-gcp-project-id
-            datastoreId: your-techdocs-datastore-id
-            location: global # GCP region of your datastore (e.g., 'global', 'europe-west4')
+            projectId: ${GCP_PROJECT_ID}
+            datastoreId: ${VERTEX_TECHDOCS_DATASTORE_ID}
+            location: europe-west4
 ```
+
+### Parameter Reference Matrix
+
+| Parameter                                                          | Type / Required                     | Default   | Description                                                                                                        |
+| :----------------------------------------------------------------- | :---------------------------------- | :-------- | :----------------------------------------------------------------------------------------------------------------- |
+| **`events.modules.gcsEventarcWebhook.oidc.enabled`**               | `boolean` (Optional)                | `false`   | Enables Google OIDC Bearer token validation on `POST /api/events/gcs`.                                             |
+| **`events.modules.gcsEventarcWebhook.oidc.audience`**              | `string` (Required if OIDC enabled) | –         | Expected OIDC audience URL (typically `${baseUrl}/api/events/gcs`).                                                |
+| **`events.modules.gcsEventarcWebhook.oidc.serviceAccountEmail`**   | `string` (Optional)                 | –         | Expected Eventarc trigger service account email on the ID token.                                                   |
+| **`events.modules.gcsEventarcWebhook.maxConcurrency`**             | `number` (Optional)                 | `5`       | Maximum parallel `importDocuments` or `deleteDocument` operations per event.                                       |
+| **`events.modules.gcsEventarcWebhook.batchSize`**                  | `number` (Optional)                 | `100`     | Documents per inline `importDocuments` batch (clamped to `1..100`).                                                |
+| **`events.modules.gcsEventarcWebhook.payloadSizeLimit`**           | `string` (Optional)                 | `'100kb'` | Express JSON body limit on `/api/events/gcs`.                                                                      |
+| **`search.engines.vertexai.types.techdocs.indexing.enabled`**      | `boolean` (Optional)                | `false`   | Must be `false` (or omitted when global `indexing.enabled` is `false`) so collators do not conflict with Eventarc. |
+| **`search.engines.vertexai.types.techdocs.datastore.projectId`**   | `string` (Required)                 | –         | GCP Project ID hosting the TechDocs Vertex AI Search Data Store.                                                   |
+| **`search.engines.vertexai.types.techdocs.datastore.datastoreId`** | `string` (Required)                 | –         | Target Discovery Engine Data Store ID for TechDocs pages.                                                          |
+| **`search.engines.vertexai.types.techdocs.datastore.location`**    | `string` (Required)                 | –         | Region/location of the TechDocs Data Store (e.g., `'global'`, `'europe-west4'`).                                   |
 
 ---
 
-## 🛠️ Local Development & Testing
+## Infrastructure Provisioning (Terraform)
 
-You can easily test the webhook and document synchronization locally without provisioning Google Eventarc triggers or GKE infrastructure.
+Enable `eventarc.googleapis.com`, `eventarcpublishing.googleapis.com`, `pubsub.googleapis.com`, `cloudresourcemanager.googleapis.com`, and either `container.googleapis.com` (GKE) or `run.googleapis.com` (Cloud Run). Enable **Object Versioning** on your TechDocs GCS bucket so delta deletions can read previous `search_index.json` generations.
 
-### 1. Prerequisites
-
-Ensure you have authenticated your local terminal with Google Cloud Application Default Credentials (ADC) so Backstage can access GCS and Vertex AI Search on your behalf:
-
-```bash
-gcloud auth application-default login
-```
-
-### 2. Configure Local Backstage
-
-In your local `app-config.local.yaml`, disable OIDC verification so you can send unauthenticated test payloads, and verify your Vertex AI Datastore configuration is correct:
-
-```yaml
-events:
-  modules:
-    gcsEventarcWebhook:
-      oidc:
-        enabled: false # Disable signature checks for local testing
-```
-
-### 3. Simulate an Eventarc Notification
-
-Start your Backstage backend locally (`yarn start`). Once it is running on `http://localhost:7007`, trigger a mock GCS Eventarc notification using `curl`.
-
-Replace `your-techdocs-bucket` with your actual GCS bucket name, and ensure the path points to an existing `search_index.json` in your bucket:
-
-```bash
-curl -X POST http://localhost:7007/api/events/gcs \
-  -H "Content-Type: application/json" \
-  -H "ce-type: google.cloud.storage.object.v1.finalized" \
-  -d '{
-    "bucket": "your-techdocs-bucket",
-    "name": "default/component/your-component/search_index.json",
-    "generation": 100001
-  }'
-```
-
-### 4. Verify Ingestion
-
-Check your local Backstage console logs. You should see output indicating that the webhook successfully intercepted the GCS event, resolved the catalog component, downloaded `search_index.json`, mapped the pages, and synchronized them:
-
-```text
-[1] info: Starting search-index synchronization for: default/component/your-component/search_index.json
-[1] info: Ingesting 12 pages into dataStore: your-techdocs-datastore-id by spawning 1 import operations (concurrency limit: 5)...
-[1] info: Waiting for all 1 import operations to complete in parallel...
-[1] info: Bulk document ingestion completed.
-[1] info: Successfully synchronized search index for Component:default/your-component
-```
-
----
-
-## 🛠️ Infrastructure Provisioning (Terraform)
-
-### 🔑 Required Google Cloud APIs
-
-Before provisioning, ensure the following service APIs are enabled on your GCP project:
-
-- **`eventarc.googleapis.com`** (Eventarc API)
-- **`eventarcpublishing.googleapis.com`** (Eventarc Publishing API, required for custom event delivery)
-- **`container.googleapis.com`** (Kubernetes Engine API, required to discover and route GKE destinations)
-- **`run.googleapis.com`** (Cloud Run Admin API, required for Cloud Run destinations)
-- **`cloudresourcemanager.googleapis.com`** (Cloud Resource Manager API, required for IAM policy configuration)
-
-To set up the Eventarc trigger in Google Cloud:
-
-#### Option A: GKE Destination (Internal VPC Routing)
-
-Use this if Backstage is running inside a GKE cluster:
+### Eventarc Trigger & IAM
 
 ```hcl
-resource "google_eventarc_trigger" "gcs_to_backstage_gke" {
-  name     = "gcs-to-backstage-gke"
-  location = "europe-west1" # Replace with your cluster region
+resource "google_service_account" "eventarc_trigger_sa" {
+  account_id   = "backstage-eventarc-sa"
+  display_name = "Backstage Eventarc Trigger Service Account"
+}
+
+resource "google_project_iam_member" "eventarc_receiver" {
+  project = var.project_id
+  role    = "roles/eventarc.eventReceiver"
+  member  = "serviceAccount:${google_service_account.eventarc_trigger_sa.email}"
+}
+
+resource "google_project_iam_member" "gcs_pubsub_publisher" {
+  project = var.project_id
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:service-${data.google_project.project.number}@gs-project-accounts.iam.gserviceaccount.com"
+}
+
+# Option A: GKE Service Destination (Private VPC Routing)
+resource "google_eventarc_trigger" "gcs_techdocs_gke" {
+  name     = "gcs-techdocs-trigger"
+  location = var.region
   project  = var.project_id
 
   matching_criteria {
@@ -436,16 +304,11 @@ resource "google_eventarc_trigger" "gcs_to_backstage_gke" {
 
   service_account = google_service_account.eventarc_trigger_sa.email
 }
-```
 
-#### Option B: Cloud Run Destination (Public HTTPS / Serverless)
-
-Use this if Backstage is running on Google Cloud Run:
-
-```hcl
-resource "google_eventarc_trigger" "gcs_to_backstage_run" {
-  name     = "gcs-to-backstage-run"
-  location = "europe-west1" # Replace with your Cloud Run region
+# Option B: Cloud Run Destination (Enable oidc.enabled: true in app-config.yaml)
+resource "google_eventarc_trigger" "gcs_techdocs_run" {
+  name     = "gcs-techdocs-run-trigger"
+  location = var.region
   project  = var.project_id
 
   matching_criteria {
@@ -461,7 +324,7 @@ resource "google_eventarc_trigger" "gcs_to_backstage_run" {
   destination {
     cloud_run_service {
       service = "backstage"
-      region  = "europe-west1"
+      region  = var.region
       path    = "/api/events/gcs"
     }
   }
@@ -470,42 +333,26 @@ resource "google_eventarc_trigger" "gcs_to_backstage_run" {
 }
 ```
 
-> [!IMPORTANT]
+> [!NOTE]
 >
-> **Required GCP Service Accounts & IAM Roles**:
-> Configure the following GCP IAM permissions based on your chosen deployment target:
+> **Additional IAM Roles by Target**:
 >
-> 1. **Eventarc Trigger Service Account** (`google_service_account.eventarc_trigger_sa.email`):
->
->    - **`roles/eventarc.eventReceiver`** on the trigger resource.
->    - **`roles/run.invoker`** on the destination Cloud Run service (only required for **Cloud Run** destinations).
->
-> 2. **GCS Service Agent** (`service-<project-number>@gs-project-accounts.iam.gserviceaccount.com`):
->
->    - **`roles/pubsub.publisher`** on the GCP project (allows GCS to publish file events to Eventarc's Pub/Sub topics).
->
-> 3. **Eventarc Service Agent** (`service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com`) — _Only required for GKE destinations_:
->    - **`roles/compute.viewer`** on the GCP project to query cluster metadata.
->    - **`roles/container.developer`** on the GKE cluster to deploy GKE forwarders.
->    - **`roles/iam.serviceAccountAdmin`** on the Eventarc Trigger Service Account to link the SA to GKE forwarders.
+> - **Cloud Run destinations**: Grant `roles/run.invoker` on the Cloud Run service to `google_service_account.eventarc_trigger_sa.email`.
+> - **GKE destinations**: Grant `roles/compute.viewer`, `roles/container.developer`, and `roles/iam.serviceAccountAdmin` (on the trigger SA) to the Eventarc Service Agent (`service-${data.google_project.project.number}@gcp-sa-eventarc.iam.gserviceaccount.com`).
 
-### Customer-Managed Encryption Keys (CMEK) Support
+### Optional: Customer-Managed Encryption Keys (CMEK)
 
-If your organization enforces an organizational policy requiring Customer-Managed Encryption Keys (KMS) for Pub/Sub topics, you must configure Eventarc to use a KMS key when creating its underlying Pub/Sub topics.
-
-Add the following to your Terraform configuration:
+When organizational policies require KMS encryption on Eventarc channels, pass the full channel config resource path in `name`:
 
 ```hcl
-# Configure the Google Eventarc channel in the region to use your KMS key
 resource "google_eventarc_google_channel_config" "default" {
   provider        = google-beta
-  location        = "europe-west1" # Must match trigger location
   project         = var.project_id
-  name            = "googleChannelConfig"
+  location        = var.region
+  name            = "projects/${var.project_id}/locations/${var.region}/googleChannelConfig"
   crypto_key_name = var.kms_key_id
 }
 
-# Grant the Eventarc Service Agent permission to use the KMS key
 resource "google_kms_crypto_key_iam_member" "eventarc_kms" {
   crypto_key_id = var.kms_key_id
   role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
@@ -513,45 +360,50 @@ resource "google_kms_crypto_key_iam_member" "eventarc_kms" {
 }
 ```
 
-### Dead-Letter Topic Configuration (Handling Delivery Failures)
+### Optional: Pub/Sub Dead-Letter Topic (DLQ)
 
-Since Eventarc routes GCS notifications to your Backstage webhook endpoint over HTTP, webhook delivery can fail if your Backstage instance is temporarily down, experiencing high load, or returns 5xx error responses.
+Attach a dead-letter topic to the Eventarc-managed Pub/Sub subscription so notifications are retained if Backstage is temporarily unreachable:
 
-To prevent events from being silently lost after Eventarc exhausts its default retry attempts, you should configure a **Dead-Letter Topic (DLQ)** on the underlying Pub/Sub subscription managed by Eventarc.
+```bash
+gcloud pubsub topics create gcs-eventarc-dlq
 
-Because the Terraform `google_eventarc_trigger` resource does not currently support configuring a dead-letter policy directly, you must configure this using `gcloud` or Terraform Pub/Sub resources:
+SUBSCRIPTION=$(gcloud eventarc triggers describe gcs-techdocs-trigger \
+  --location="${REGION}" \
+  --format="value(transport.pubsub.subscription)")
 
-#### Step 1: Create a Dead-Letter Pub/Sub Topic
-
-Create a separate Pub/Sub topic to receive failed events:
-
-```hcl
-resource "google_pubsub_topic" "eventarc_dlq" {
-  name = "gcs-eventarc-dlq"
-}
+gcloud pubsub subscriptions update "${SUBSCRIPTION}" \
+  --dead-letter-topic=gcs-eventarc-dlq \
+  --max-delivery-attempts=5
 ```
 
-#### Step 2: Grant Pub/Sub Permission to Publish to the Dead-Letter Topic
+---
 
-Pub/Sub needs permission to write failed messages to the DLQ topic. Grant the `roles/pubsub.publisher` role on the DLQ topic to the GCP Pub/Sub Service Agent (`service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com`):
+## Local Development Testing
 
-```hcl
-resource "google_pubsub_topic_iam_member" "pubsub_dlq_publisher" {
-  topic  = google_pubsub_topic.eventarc_dlq.name
-  role   = "roles/pubsub.publisher"
-  member = "serviceAccount:service-${data.google_project.project.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
-}
-```
-
-#### Step 3: Attach the Dead-Letter Policy to the Eventarc Subscription
-
-1. Identify the Pub/Sub subscription managed by your Eventarc trigger:
+1. Authenticate Application Default Credentials:
    ```bash
-   gcloud eventarc triggers describe gcs-to-backstage-run --location=europe-west1 --format="value(transport.pubsub.subscription)"
+   gcloud auth application-default login
    ```
-2. Update the subscription with a dead-letter policy pointing to your DLQ topic:
+2. Set `events.modules.gcsEventarcWebhook.oidc.enabled: false` in `app-config.local.yaml`.
+3. Send a simulated CloudEvent to your local backend:
    ```bash
-   gcloud pubsub subscriptions update <SUBSCRIPTION_NAME> \
-     --dead-letter-topic=gcs-eventarc-dlq \
-     --max-delivery-attempts=5
+   curl -X POST http://localhost:7007/api/events/gcs \
+     -H "Content-Type: application/json" \
+     -H "ce-type: google.cloud.storage.object.v1.finalized" \
+     -d '{
+       "bucket": "your-techdocs-bucket",
+       "name": "default/component/your-service/search_index.json",
+       "generation": 100001
+     }'
    ```
+
+---
+
+## Troubleshooting
+
+| Scenario                                        | Symptom                                                                                 | Root Cause                                                                                                                    | Resolution                                                                                  |
+| :---------------------------------------------- | :-------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
+| **Conflicting Indexing Error**                  | Startup fails with `GCS Eventarc Webhook conflict: techdocs indexing is enabled`.       | `search.engines.vertexai.indexing.enabled` or `types.techdocs.indexing.enabled` is `true`.                                    | Set `search.engines.vertexai.types.techdocs.indexing.enabled: false`.                       |
+| **GKE Forwarder `401 Unauthorized`**            | Eventarc deliveries fail with HTTP `401` inside GKE.                                    | `oidc.enabled: true` is set, while GKE `gke-forwarder` pods do not attach Google OIDC tokens.                                 | Set `oidc.enabled: false` and isolate `/api/events/gcs` via edge rules and `NetworkPolicy`. |
+| **Partial Import Failure (`failureCount > 0`)** | Logs show `importDocuments reported X failed document(s)` and delta cleanup is skipped. | Discovery Engine rejected one or more documents due to schema mismatch (delta deletion is skipped to protect existing pages). | Inspect the logged `errorSamples`, update the Data Store schema, and re-trigger the event.  |
+| **Removed TechDocs Pages Not Deleted**          | Updated sites still show deleted pages in search results.                               | GCS Object Versioning is disabled on the TechDocs bucket, so `getPreviousGeneration` returns `null`.                          | Enable Object Versioning on the TechDocs GCS bucket.                                        |

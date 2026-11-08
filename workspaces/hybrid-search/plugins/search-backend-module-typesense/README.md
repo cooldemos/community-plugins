@@ -1,59 +1,64 @@
 # Typesense Search Backend Module for Backstage (`@backstage-community/plugin-search-backend-module-typesense`)
 
-This backend module integrates Typesense search capabilities into the Backstage Search system. It registers itself to the `@backstage-community/plugin-search-backend-module-hybrid` router to handle specific categories (like `software-catalog` and others).
+`@backstage-community/plugin-search-backend-module-typesense` integrates [Typesense](https://typesense.org) with Backstage Search. It delivers sub-millisecond typo-tolerant keyword matching, structured facet filtering, and optional built-in vector embeddings without the heap constraints of Lunr or the operational footprint of Elasticsearch.
+
+The package can run standalone as the portal's primary search engine or attach as a sub-engine under `@backstage-community/plugin-search-backend-module-hybrid`.
 
 ---
 
-## 🏛️ Features & Architecture Deep Dive
+## Architecture Overview
 
-### 1. 🔍 Typesense Search Engine
+```text
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                      Typesense Search Module Architecture                         │
+├───────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                   │
+│  [ Extension Points ]                                                             │
+│    ├── Standalone Mode       : searchEngineRegistryExtensionPoint                 │
+│    └── Hybrid Sub-Engine Mode: hybridSearchEngineRegistryExtensionPoint (/hybrid) │
+│                                                                                   │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Ingestion & Query Pipeline                                                  │  │
+│  │                                                                             │  │
+│  │ Collator Streams ──► [ Batch Buffer (100 Docs) ] ──► [ Schema Auto-Mapper ] │  │
+│  │                                                             │               │  │
+│  │ SearchQuery      ──► [ Filter & DSL Translator ] ───────────┤               │  │
+│  └─────────────────────────────────────────────────────────────┼───────────────┘  │
+│                                                                │                  │
+│                                                                ▼                  │
+│  ┌─────────────────────────────────────────────────────────────────────────────┐  │
+│  │ Typesense Client (API Key Auth, Health Checks & Client-Side Failover)       │  │
+│  └──────────────────────────┬───────────────────────────────────┬──────────────┘  │
+│                             ▼                                   ▼                 │
+│           ┌────────────────────────────┐      ┌────────────────────────────┐      │
+│           │ Typesense Node 1           │      │ Typesense Node 2...        │      │
+│           │ backstage_software-catalog │      │ backstage_software-catalog │      │
+│           │ backstage_techdocs         │      │ backstage_techdocs         │      │
+│           └────────────────────────────┘      └────────────────────────────┘      │
+│                                                                                   │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
 
-Translates standard Backstage search queries into high-performance keyword searches in Typesense.
+### Core Capabilities
 
-- **Parallel Query Execution**: Multi-collection queries targeting multiple index types (e.g., `software-catalog` and `techdocs`) are executed concurrently in parallel using `Promise.all` to minimize search latency.
-
-### 2. ⚡ Batch Ingestion Stream
-
-During indexing, Backstage collates thousands of catalog entities and feeds them to the search engine one-by-one. Ingesting them via separate HTTP requests would slow down the indexing process.
-This module implements a **buffered writable stream** to optimize this flow:
-
-- **Memory Buffering**: As documents flow in, they are pushed into a memory array buffer instead of being sent immediately.
-- **Batch Ingestion**: When the buffer reaches **100 documents**, the engine flushes the entire batch to Typesense in a **single bulk HTTP request**.
-- **Safe Upsert**: Documents are imported using Typesense's `action: 'upsert'` strategy, which overwrites old entities and prevents double-indexing.
-- **Final Flush**: When the indexing task finishes, any remaining documents in the buffer are flushed to ensure no documents are lost.
-
-### 3. ⚙️ Auto-Dynamic Schemas
-
-To eliminate the need to pre-define schemas for every Backstage document type, this module implements an **auto-provisioning wildcard schema strategy**:
-
-- **Assertion Check**: When the indexing task starts, the engine checks if a corresponding Typesense collection named `backstage_${type}` exists.
-- **Auto-Creation on 404**: If the collection is missing, the engine catches the error and creates it on-the-fly.
-- **Wildcard Fallback**: The collection is created with a regex wildcard field rule: `{ "name": ".*", "type": "auto" }`. This instructs Typesense to automatically analyze incoming field datatypes (strings, integers, arrays, etc.) and dynamically construct the schema as documents are ingested.
-
-### 4. 🎛️ Configurable Passthroughs
-
-To allow full access to Typesense's advanced capabilities (such as connection management, custom query boosting, or AI-powered vector searches) without hardcoding them, this module implements a **raw configuration passthrough pattern**:
-
-- **Client Connection Options**: Any key-value pairs defined under `clientOptions` in `app-config.yaml` are forwarded directly to the constructor of the underlying `typesense` client library.
-- **Custom Collection Schemas**: When a collection is created, you can specify custom field schemas inside the `collections` configuration block (e.g. to enable built-in vector/semantic search using `ts/all-MiniLM-L6-v2` embedding models). See the [Custom Collection and Vector Search Configuration](#3-custom-collection-and-vector-search-configuration) section below for a configuration example.
-
-- **Custom Query Options**: Any properties defined under `searchOptions` are merged directly into the query payload sent to the Typesense search endpoint (e.g. custom `query_by` fields).
+1. **Multi-Collection Parallel Search**: Queries spanning multiple Backstage document types execute concurrently across `backstage_<type>` collections via `Promise.all` and translate Backstage filters into Typesense `filter_by` expressions (preserving exact field values such as `` kind:=`Component`  ``).
+2. **Buffered Bulk Upserts**: Collator streams buffer documents in memory and flush them in bulk batches of `100` using `action: 'upsert'`, flushing any trailing items when the stream closes.
+3. **Auto-Dynamic Collection Provisioning**: Before indexing into `backstage_<type>`, the engine checks whether the collection exists and automatically creates it on `404` using a wildcard schema (`{ "name": ".*", "type": "auto" }`) merged with any custom fields configured in `app-config.yaml`.
+4. **Raw SDK & Vector Passthroughs**: `clientOptions`, `collections.<type>.fields`, and `collections.<type>.searchOptions` pass straight through to the Typesense client so operators can tune timeouts, retries, `query_by` weights, or server-side embedding models (`ts/all-MiniLM-L6-v2`).
 
 ---
 
-## 🔌 Installation & Backend Integration
+## Installation & Backend Integration
 
-First, install the package in your Backstage backend package:
+Install the package in `packages/backend`:
 
 ```bash
 yarn --cwd packages/backend add @backstage-community/plugin-search-backend-module-typesense
 ```
 
-This package exports two backend modules depending on your search architecture:
+### 1. Standalone Mode (Primary Search Engine)
 
-### 1. Standalone Search Engine Setup
-
-If you want Typesense to act as the primary, standalone search engine for your entire Backstage portal (default export):
+Use the default package export when Typesense serves every search category in your Backstage portal:
 
 ```typescript
 // packages/backend/src/index.ts
@@ -61,7 +66,7 @@ import { createBackend } from '@backstage/backend-defaults';
 
 const backend = createBackend();
 
-// Registers Typesense directly as the primary search engine (default export)
+backend.add(import('@backstage/plugin-search-backend'));
 backend.add(
   import('@backstage-community/plugin-search-backend-module-typesense'),
 );
@@ -69,9 +74,9 @@ backend.add(
 backend.start();
 ```
 
-### 2. Hybrid Search Engine Router Setup
+### 2. Hybrid Mode (Sub-Engine under Hybrid Router)
 
-If you are running the custom Hybrid Search Router (routing queries to different engines like Typesense for catalog and Vertex AI for techdocs in parallel), you must register the named export:
+Use the `/hybrid` subpath export when pairing Typesense with `@backstage-community/plugin-search-backend-module-hybrid`:
 
 ```typescript
 // packages/backend/src/index.ts
@@ -79,15 +84,11 @@ import { createBackend } from '@backstage/backend-defaults';
 
 const backend = createBackend();
 
-// 1. Add the Hybrid Search router orchestrator
+backend.add(import('@backstage/plugin-search-backend'));
 backend.add(import('@backstage-community/plugin-search-backend-module-hybrid'));
-
-// 2. Add Typesense registered to the hybrid search registry
 backend.add(
   import('@backstage-community/plugin-search-backend-module-typesense/hybrid'),
 );
-
-// 3. Add other sub-engines (like Vertex AI Search hybrid)
 backend.add(
   import('@backstage-community/plugin-search-backend-module-vertexai/hybrid'),
 );
@@ -97,30 +98,23 @@ backend.start();
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-Configure the Typesense search engine settings in your `app-config.yaml` depending on your search architecture.
-
-### 1. Standalone Search Engine Configuration
-
-If you are running Typesense directly as the primary search engine for your Backstage portal:
+### 1. Standalone Configuration
 
 ```yaml
 search:
-  engine: typesense
   engines:
     typesense:
-      apiKey: ${typesenseApiKey}
+      apiKey: ${TYPESENSE_API_KEY}
       nodes:
-        - host: ${typesenseHost} # e.g. localhost for local development, or typesense service name in GKE/Docker
-          port: ${typesensePort}
-          protocol: ${typesenseProtocol}
-      # Additional raw options passed straight to the Typesense Client
+        - host: ${TYPESENSE_HOST}
+          port: 8108
+          protocol: http
       clientOptions:
         connectionTimeoutSeconds: 5
         numRetries: 3
         logLevel: info
-      # Customizable schemas and query parameters
       collections:
         software-catalog:
           fields:
@@ -130,25 +124,23 @@ search:
             query_by: 'title,text,location'
 ```
 
-### 2. Hybrid Search Engine Configuration
-
-If you are running the Hybrid Search Router (routing queries to different engines like Typesense for catalog and Vertex AI for techdocs in parallel):
+### 2. Hybrid Router Configuration
 
 ```yaml
 search:
-  engine: hybrid
   engines:
     hybrid:
+      mergeStrategy: score-normalized-sort
       routing:
         software-catalog: typesense
         techdocs: vertexai
         default: typesense
     typesense:
-      apiKey: ${typesenseApiKey}
+      apiKey: ${TYPESENSE_API_KEY}
       nodes:
-        - host: ${typesenseHost}
-          port: ${typesensePort}
-          protocol: ${typesenseProtocol}
+        - host: ${TYPESENSE_HOST}
+          port: 8108
+          protocol: http
       collections:
         software-catalog:
           fields:
@@ -156,19 +148,21 @@ search:
               type: 'auto'
           searchOptions:
             query_by: 'title,text,location'
-    # Configuration for other engines (e.g. vertexai) goes here...
 ```
 
----
+### 3. Vector / Semantic Search Configuration
 
-### 3. Custom Collection and Vector Search Configuration
-
-If you want to configure custom schemas for specific document types (such as configuring Typesense's built-in semantic/vector search using the `ts/all-MiniLM-L6-v2` model):
+Typesense can compute embeddings automatically on ingestion using built-in ML models:
 
 ```yaml
 search:
   engines:
     typesense:
+      apiKey: ${TYPESENSE_API_KEY}
+      nodes:
+        - host: ${TYPESENSE_HOST}
+          port: 8108
+          protocol: http
       collections:
         software-catalog:
           fields:
@@ -179,7 +173,23 @@ search:
               num_dim: 384
               embed:
                 from:
+                  - title
                   - text
                 model_config:
                   model_name: 'ts/all-MiniLM-L6-v2'
+          searchOptions:
+            query_by: 'title,text,location,embedding'
 ```
+
+### Parameter Reference Matrix
+
+| Parameter                              | Type / Required       | Default                               | Description                                                                                                                                               |
+| :------------------------------------- | :-------------------- | :------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`apiKey`**                           | `string` (Required)   | –                                     | Typesense API key with permissions to manage collections, import documents, and run searches.                                                             |
+| **`nodes[].host`**                     | `string` (Required)   | –                                     | Hostname or IP address of a Typesense cluster node.                                                                                                       |
+| **`nodes[].port`**                     | `number` (Required)   | –                                     | Port exposed by the Typesense service (e.g., `8108` or `443`).                                                                                            |
+| **`nodes[].protocol`**                 | `string` (Required)   | –                                     | Transport protocol (`http` or `https`).                                                                                                                   |
+| **`nodes[].path`**                     | `string` (Optional)   | `''`                                  | Optional URL path prefix when Typesense sits behind a reverse proxy.                                                                                      |
+| **`clientOptions`**                    | `object` (Optional)   | –                                     | Raw options forwarded to the `Typesense.Client` constructor (such as `connectionTimeoutSeconds`, `healthcheckIntervalSeconds`, `numRetries`, `logLevel`). |
+| **`collections.<type>.fields`**        | `object[]` (Optional) | `[{ name: '.*', type: 'auto' }]`      | Custom Typesense field definitions created when provisioning `backstage_<type>`.                                                                          |
+| **`collections.<type>.searchOptions`** | `object` (Optional)   | `{ query_by: 'title,text,location' }` | Raw Typesense search parameters merged into queries for `<type>` (such as `query_by`, `prefix`, `filter_by`, `sort_by`).                                  |

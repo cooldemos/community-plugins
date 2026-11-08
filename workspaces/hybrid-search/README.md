@@ -1,91 +1,114 @@
 # Hybrid Search Workspace (`workspaces/hybrid-search`)
 
-This workspace hosts a modular hybrid search architecture for Backstage. It allows routing queries to different search engines (such as Vertex AI, Typesense, or others) in parallel based on the requested categories, and dynamically merging the search results into a single unified search experience.
+Standard Backstage search routes every query through a single search engine and runs document ingestion inside the main Node.js backend process. As a developer portal grows, that single-engine design creates three trade-offs:
 
-For a detailed conceptual and architectural explanation of this workspace (including query orchestration, deployment topologies, techdocs ingestion paths, webhook security models, and catalog metadata enrichment details), see the [Architecture & Design Explanation](docs/architecture.md).
+1. **Single-engine routing**: Every document type must live in one backend, preventing teams from pairing fast keyword search for catalog entities with semantic retrieval for documentation.
+2. **Keyword-only matching**: Built-in engines (Lunr, PostgreSQL, Elasticsearch) do not natively combine typo-tolerant entity lookup with managed LLM extractive answers.
+3. **In-process ingestion contention**: Polling and parsing large TechDocs archives inside the Node.js event loop competes directly with user HTTP traffic for CPU and memory.
+
+The **Hybrid Search Workspace** extends Backstage's New Backend System (`@backstage/backend-plugin-api`) with a federated query router, standalone-or-hybrid search modules for **Typesense** and **Google Cloud Vertex AI Search**, and an event-driven ingestion webhook that moves TechDocs indexing out of the Node.js request loop.
 
 ---
 
-## 🏛️ High-Level Architecture
+## High-Level Architecture
 
-The workspace implements a **Federated Hybrid Search** pipeline. Queries from the user interface are handled by the hybrid engine router, which splits the query across different search systems (engines) in parallel based on the requested document categories (types), then merges the results.
+Incoming search requests hit the Hybrid Search Router, which evaluates the requested document categories (`types`) and dispatches queries in parallel to the mapped search backends before consolidating and normalizing the results.
 
-```mermaid
-graph LR
-    %% Query Pipeline
-    subgraph QueryFlow [🔍 Federated Query Pipeline]
-        User([🖥️ User Interface]) -->|"GET /api/search/query"| Backend[⚙️ Search Backend]
-        Backend -->|delegates query| Router["📦 @backstage-community/plugin-search-backend-module-hybrid <br> (Router)"]
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                             Federated Hybrid Search Architecture                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  [ Query Pipeline ]                                                                         │
+│                                                                                             │
+│  Backstage UI ──► GET /api/search/query ──► Hybrid Search Router                            │
+│                                                    │                                        │
+│                        ┌───────────────────────────┴───────────────────────────┐            │
+│                        │ ('software-catalog')                                  │ ('techdocs')
+│                        ▼                                                       ▼            │
+│           Typesense Search Module                                 Vertex AI Search Module   │
+│                        │                                                       │            │
+│                        ▼                                                       ▼            │
+│             Typesense Cluster Nodes                               Google Discovery Engine   │
+│                                                                                ▲            │
+│  [ Ingestion Pipelines ]                                                       │            │
+│                                                                                │            │
+│  • Direct Reconciling Collator (BatchSearchEngineIndexer + contentHash) ───────┤            │
+│  • Decoupled CI/CD ──► GCS Bucket ──► Eventarc Trigger ──► /api/events/gcs ────┘            │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+```
 
-        Router -->|"'software-catalog'"| Typesense["📦 @backstage-community/plugin-search-backend-module-typesense"]
-        Router -->|"'techdocs'"| VertexAI["📦 @backstage-community/plugin-search-backend-module-vertexai"]
+### Deployment Modes
 
-        Typesense -->|Queries| TS_Store[(🗄️ Typesense Server)]
-        VertexAI -->|Queries| VAI_Store[(☁️ Vertex AI Search Engine)]
-    end
+Every search engine module in this workspace supports two deployment modes:
 
-    %% Ingestion Pipeline
-    subgraph IngestionFlow [⚡ Decoupled Ingestion Pipeline]
-        GCS[(🗄️ GCS TechDocs Bucket)] -->|Eventarc Trigger| Webhook["📦 @backstage-community/plugin-events-backend-module-gcs-eventarc <br> (Webhook)"]
-        Webhook -->|Cloud-Native Ingestion| VAI_Store
-    end
+1. **Standalone Mode (Primary Engine)**: Register either Typesense or Vertex AI Search directly into Backstage's core `searchEngineRegistryExtensionPoint`. All queries and collator streams flow through that single engine.
+2. **Hybrid Mode (Federated Search)**: Register the [Hybrid Search Router](./plugins/search-backend-module-hybrid/README.md) as the primary search engine and attach sub-engines through `hybridSearchEngineRegistryExtensionPoint` using their `/hybrid` entry points.
 
-    classDef default fill:#1e293b,stroke:#475569,stroke-width:1px,color:#f8fafc;
-    classDef router fill:#0f172a,stroke:#ffab00,stroke-width:2px,color:#ffffff;
-    classDef subengine fill:#0f172a,stroke:#00e676,stroke-width:2px,color:#ffffff;
-    classDef store fill:#0e1726,stroke:#3b82f6,stroke-width:1.5px,color:#f8fafc;
-    classDef webhook fill:#0f172a,stroke:#a855f7,stroke-width:2px,color:#ffffff;
+---
 
-    class User,Backend default;
-    class Router router;
-    class Typesense,VertexAI subengine;
-    class TS_Store,VAI_Store,GCS store;
-    class Webhook webhook;
+## Workspace Plugins & Modules
 
-    style QueryFlow fill:#0b0f19,stroke:#1e293b,stroke-width:1px,color:#94a3b8;
-    style IngestionFlow fill:#0b0f19,stroke:#1e293b,stroke-width:1px,color:#94a3b8;
+| Plugin / Module                    | Directory                                                                                              | Purpose                                                                                                                                                                 |
+| :--------------------------------- | :----------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Hybrid Search Engine Router**    | [`plugins/search-backend-module-hybrid`](./plugins/search-backend-module-hybrid/README.md)             | Federated orchestrator that routes queries across registered sub-engines in parallel with `Promise.allSettled` fault isolation and merges heterogeneous result sets.    |
+| **Typesense Search Engine Module** | [`plugins/search-backend-module-typesense`](./plugins/search-backend-module-typesense/README.md)       | Integrates Typesense for typo-tolerant keyword search, structured metadata filtering, auto-dynamic `backstage_<type>` schemas, and optional vector embeddings.          |
+| **Vertex AI Search Engine Module** | [`plugins/search-backend-module-vertexai`](./plugins/search-backend-module-vertexai/README.md)         | Integrates Google Cloud Vertex AI Search with extractive answer cascades, three-phase `contentHash` collator reconciliation, and orphaned TechDocs cleanup.             |
+| **GCS Eventarc Ingestion Webhook** | [`plugins/events-backend-module-gcs-eventarc`](./plugins/events-backend-module-gcs-eventarc/README.md) | Receives Google Eventarc notifications when `search_index.json` is finalized in Cloud Storage, enriches pages with Catalog metadata, and synchronizes Vertex AI Search. |
+
+---
+
+## Installation & Backend Integration
+
+Add the Hybrid Search Router and the sub-engine `/hybrid` entry points to `packages/backend/src/index.ts`:
+
+```typescript
+// packages/backend/src/index.ts
+import { createBackend } from '@backstage/backend-defaults';
+
+const backend = createBackend();
+
+backend.add(import('@backstage/plugin-search-backend'));
+backend.add(import('@backstage/plugin-search-backend-module-catalog'));
+backend.add(import('@backstage/plugin-search-backend-module-techdocs'));
+
+// 1. Register the Hybrid Search Router as the primary search engine
+backend.add(import('@backstage-community/plugin-search-backend-module-hybrid'));
+
+// 2. Register sub-engines via their /hybrid subpath exports
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-typesense/hybrid'),
+);
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-vertexai/hybrid'),
+);
+
+// 3. Optional: Register the Eventarc webhook when offloading TechDocs ingestion to GCS
+backend.add(
+  import('@backstage-community/plugin-events-backend-module-gcs-eventarc'),
+);
+
+backend.start();
 ```
 
 ---
 
-### 🔌 Deployment Modes
+## Quick Start Configuration
 
-Each search engine module in this workspace is designed to be highly flexible and can be deployed in one of two modes:
-
-1. **Standalone Mode (Primary Engine)**: The search module is registered directly as the primary search engine for Backstage (replacing default engines like Lunr). All query execution and indexing flow directly through it.
-2. **Hybrid Mode (Federated Search)**: The [Hybrid Search Engine Router](./plugins/search-backend-module-hybrid/README.md) is registered as the primary search engine, and delegates queries to multiple sub-engines (like Typesense and Vertex AI Search) in parallel based on the requested categories, merging the results dynamically.
-
----
-
-## 📦 Workspace Plugins & Modules
-
-This workspace contains four specialized plugins:
-
-| Plugin / Module                    | Directory                                                                                              | Purpose                                                                                                                                                                                                                                                                                                                                                                  |
-| :--------------------------------- | :----------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Hybrid Search Engine Router**    | [`plugins/search-backend-module-hybrid`](./plugins/search-backend-module-hybrid/README.md)             | The core router that delegates queries to registered sub-engines in parallel based on document categories, then aggregates and interleaves the results.                                                                                                                                                                                                                  |
-| **Typesense Search Engine Module** | [`plugins/search-backend-module-typesense`](./plugins/search-backend-module-typesense/README.md)       | Integrates Typesense search capabilities into Backstage. Can be deployed as a standalone primary search engine or registered as a sub-engine to the Hybrid Router. Handles active document ingestion and query mapping for any standard/custom document types.                                                                                                           |
-| **Vertex AI Search Engine Module** | [`plugins/search-backend-module-vertexai`](./plugins/search-backend-module-vertexai/README.md)         | Integrates Google Cloud Vertex AI Search into Backstage. Can be deployed as a standalone primary search engine or registered as a sub-engine to the Hybrid Router. Translates queries to Discovery Engine API requests and manages background catalog cleanup.                                                                                                           |
-| **GCS Eventarc Ingestion Webhook** | [`plugins/events-backend-module-gcs-eventarc`](./plugins/events-backend-module-gcs-eventarc/README.md) | Cloud-native webhook ingress that listens to GCS file creation events via Google Eventarc to trigger incremental ingestion into Vertex AI Search. This decouples documentation publication from the Backstage backend, allowing instant indexing of TechDocs built via external CI/CD pipelines (e.g. using `techdocs-cli`) with zero local Node.js CPU/memory overhead. |
-
----
-
-## ⚙️ Quick Start Configuration
-
-To configure the workspace routing and sub-engines in your `app-config.yaml`:
+Configure category routing and sub-engine settings in `app-config.yaml`:
 
 ```yaml
 search:
   engines:
     hybrid:
-      # Optional: 'interleave' (default) or 'score-normalized-sort'
-      mergeStrategy: score-normalized-sort
+      mergeStrategy: score-normalized-sort # 'interleave' (default) or 'score-normalized-sort'
       routing:
         software-catalog: typesense
         techdocs: vertexai
-        default: typesense # Fallback for unmapped categories
+        default: typesense
     typesense:
-      apiKey: ${typesenseApiKey}
+      apiKey: ${TYPESENSE_API_KEY}
       nodes:
         - host: localhost
           port: 8108
@@ -98,87 +121,57 @@ search:
           searchOptions:
             query_by: 'title,text,location'
     vertexai:
+      indexing:
+        enabled: false # Offload TechDocs indexing to the GCS Eventarc webhook
       types:
         techdocs:
           datastore:
-            projectId: ${projectId}
-            datastoreId: ${dataStoreId}
-            location: ${location}
-          # Optional: Search App Engine ID. If specified, queries will target the Engine serving config
-          # rather than the standalone data store serving config, enabling advanced search features.
+            projectId: ${GCP_PROJECT_ID}
+            datastoreId: ${VERTEX_TECHDOCS_DATASTORE_ID}
+            location: europe-west4
           engine:
-            projectId: ${projectId}
-            engineId: ${engineId}
-            location: ${location}
-          # Optional: Raw search client query options (e.g. summary answers / spell corrections)
+            projectId: ${GCP_PROJECT_ID}
+            engineId: ${VERTEX_TECHDOCS_ENGINE_ID}
+            location: europe-west4
           searchOptions:
             contentSearchSpec:
-              snippetSpec:
-                maxSnippetCount: 1
+              extractiveContentSpec:
+                maxExtractiveAnswerCount: 1
+                maxExtractiveSegmentCount: 2
       cleanup:
         enabled: true
         frequency: { hours: 2 }
+        initialDelay: { minutes: 2 }
+
+techdocs:
+  publisher:
+    type: googleGcs
+    googleGcs:
+      bucketName: ${TECHDOCS_GCS_BUCKET}
 ```
 
 ---
 
-## 🔌 Installation & Backend Integration
+## Development & Verification Commands
 
-To register the Hybrid Search Engine and its modules in your Backstage backend instance, add them to your `packages/backend/src/index.ts` file:
-
-```typescript
-// packages/backend/src/index.ts
-import { createBackend } from '@backstage/backend-defaults';
-
-const backend = createBackend();
-
-// ... other plugins/modules ...
-
-// 1. Add the Hybrid search engine orchestrator
-backend.add(import('@backstage-community/plugin-search-backend-module-hybrid'));
-
-// 2. Add the sub-engine modules you wish to register (using their hybrid entry points)
-backend.add(
-  import('@backstage-community/plugin-search-backend-module-typesense/hybrid'),
-);
-backend.add(
-  import('@backstage-community/plugin-search-backend-module-vertexai/hybrid'),
-);
-
-// 3. (Optional) Add the companion ingestion webhook module if using Vertex AI Search
-backend.add(
-  import('@backstage-community/plugin-events-backend-module-gcs-eventarc'),
-);
-
-backend.start();
-```
-
----
-
-## 🛠️ Development & Commands
-
-Run all command scripts from the root directory of this workspace:
-
-### Install Workspace Dependencies
+Run all workspace commands from `workspaces/hybrid-search`:
 
 ```bash
+# Install workspace dependencies
 yarn install
-```
 
-### Run All Unit and Integration Tests
+# Full TypeScript type-checking
+yarn tsc:full
 
-```bash
-yarn test --watch=false
-```
+# Lint all packages
+yarn lint:all
 
-### Compile & Build All Packages
+# Run unit and integration test suites
+yarn test:all
 
-```bash
-yarn build:all
-```
-
-### Generate and Verify API Reports
-
-```bash
+# Regenerate and validate public API reports
 yarn build:api-reports
+
+# Check Markdown and source formatting
+yarn prettier:check
 ```

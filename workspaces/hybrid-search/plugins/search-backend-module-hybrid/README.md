@@ -1,74 +1,140 @@
 # Hybrid Search Backend Module for Backstage (`@backstage-community/plugin-search-backend-module-hybrid`)
 
-This custom search engine module integrates with the Backstage search system, providing unified routing, parallel execution, and result consolidation across multiple indices and backends.
-
-It acts as a **dynamic orchestrator** that delegates query routing and indexer streams to specialized sub-engines registered via its extension point.
+Backstage's core search backend (`@backstage/plugin-search-backend`) allows only a single `SearchEngine` to register for the entire portal. `@backstage-community/plugin-search-backend-module-hybrid` lifts that constraint by acting as the primary search engine while exposing **`hybridSearchEngineRegistryExtensionPoint`** so multiple specialized backends (such as Typesense for catalog entities and Vertex AI Search for TechDocs) can serve queries side by side.
 
 ---
 
-## 🏛️ Architecture & Routing
+## Architecture & Query Dispatch
 
-The core engine operates a **Hybrid Search Router** that routes queries across registered sub-engines based on the document types (categories) requested, as defined in your configuration.
+### Sub-Engine Extension Point Registry
 
-```mermaid
-flowchart TD
-    User([User Interface]) -->|"GET /api/search/query"| Controller[Search Backend Router]
-    Controller -->|query| HybridEngine[Hybrid Search Engine Router]
+At startup, the Hybrid Search module registers `HybridSearchEngine` into Backstage's core `searchEngineRegistryExtensionPoint`. Sub-engine modules attach themselves dynamically through `hybridSearchEngineRegistryExtensionPoint` without hardcoded dependencies between packages.
 
-    HybridEngine -->|matches type X| EngineA[Registered Engine A]
-    HybridEngine -->|matches type Y| EngineB[Registered Engine B]
-
-    HybridEngine -->|"no types mapped / empty []"| Parallel[Query All in Parallel]
-    Parallel --> EngineA
-    Parallel --> EngineB
-
-    Parallel -->|Merge & Consolidate Results| Merge[Results Aggregator]
-    Merge --> Controller
-
-    style HybridEngine fill:#11151c,stroke:#ffab00,stroke-width:2px,color:#ffffff
-    style EngineA fill:#11151c,stroke:#00e676,stroke-width:2px,color:#ffffff
-    style EngineB fill:#11151c,stroke:#00e676,stroke-width:2px,color:#ffffff
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                           Hybrid Search Extension Point Registry                            │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│                                                                                             │
+│  Backstage Core Search Plugin (@backstage/plugin-search-backend)                            │
+│                                │                                                            │
+│                                ▼ (Core Single-Engine Registration)                          │
+│                   [ searchEngineRegistryExtensionPoint ]                                    │
+│                                │                                                            │
+│                                ▼                                                            │
+│       Hybrid Search Router (@backstage-community/plugin-search-backend-module-hybrid)       │
+│                                │                                                            │
+│                                ▼ (Custom Extension Point)                                   │
+│               [ hybridSearchEngineRegistryExtensionPoint ]                                  │
+│                                │                                                            │
+│        ┌───────────────────────┼───────────────────────┐                                    │
+│        ▼                       ▼                       ▼                                    │
+│  ┌────────────┐         ┌────────────┐         ┌──────────────────┐                         │
+│  │ Typesense  │         │ Vertex AI  │         │ Custom Backend   │                         │
+│  │ /hybrid    │         │ /hybrid    │         │ Module           │                         │
+│  └────────────┘         └────────────┘         └──────────────────┘                         │
+│                                                                                             │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Federated Query Routing & Merging Strategies
+### Targeted vs. Federated Dispatch
 
-When no type filter is selected (or when multiple types mapping to different engines are requested), the hybrid engine queries the corresponding search engines in parallel. It then aggregates the multiple result sets into a single unified result list using one of the configurable merging strategies:
+When a request arrives at `GET /api/search/query`, `HybridSearchEngine` inspects `query.types` against `search.engines.hybrid.routing`:
 
-#### 1. Round-Robin Interleaving (`interleave` - Default)
+- **Single-engine dispatch**: When all requested types map to the same backend, the router delegates the query directly to that sub-engine and preserves its native `nextPageCursor`.
+- **Federated parallel fan-out**: When `query.types` is empty (portal-wide search) or spans multiple backends, the router dispatches scoped queries concurrently across every target sub-engine.
+- **Unmapped category fallback**: When a requested document type has no explicit entry in `routing`, the router falls back to `routing.default` if configured, or returns an empty result set.
+- **Fault isolation**: Multi-engine queries execute via `Promise.allSettled`. If one backend throws an error, the router logs the failure and still returns results from all healthy sub-engines.
 
-In this strategy, the engine sequentially pulls one result from each sub-engine's results list in a round-robin fashion (e.g. Engine A result `0`, Engine B result `0`, Engine A result `1`, Engine B result `1`...).
+```text
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                                HTTP Search Request                                │
+│                               GET /api/search/query                               │
+└─────────────────────────────────────────┬─────────────────────────────────────────┘
+                                          │
+                                          ▼
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                            HybridSearchEngine Router                              │
+│                                                                                   │
+│      Evaluates requested document categories (types) against routing matrix       │
+│                                         │                                         │
+│                    ┌────────────────────┴────────────────────┐                    │
+│                    ▼                                         ▼                    │
+│         Single-Engine Request                      Multi-Engine Request           │
+│       (Targeted Direct Dispatch)            (Promise.allSettled Parallel Fan-Out) │
+└────────────────────┬─────────────────────────────────────────┬────────────────────┘
+                     │                                         │
+                     ▼                                         ▼
+┌─────────────────────────────────────────┐ ┌───────────────────────────────────────┐
+│        Target Search Sub-Engine         │ │    Sub-Engine A    Sub-Engine B ...   │
+│    (Preserves Native nextPageCursor)    │ └──────────────────┬────────────────────┘
+└────────────────────┬────────────────────┘                    │
+                     │                                         ▼
+                     │                      ┌───────────────────────────────────────┐
+                     │                      │      Result Merger & Normalizer       │
+                     │                      │  (interleave / score-normalized-sort) │
+                     │                      └──────────────────┬────────────────────┘
+                     │                                         │
+                     └────────────────────┬────────────────────┘
+                                          │
+                                          ▼
+┌───────────────────────────────────────────────────────────────────────────────────┐
+│                            Consolidated Search Response                           │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
 
-- **When to use**: Best when engines search completely different scopes (e.g., catalog entities vs documentation pages) and you want to ensure results from all categories get equal visual presence on the first page, regardless of the scoring scale of each backend.
+---
 
-#### 2. Relative Score Normalization (`score-normalized-sort`)
+## Federated Result Merging & Pagination
 
-Sub-engines often output match relevance scores on entirely different scales (for example, Typesense scores can be in the hundreds, whereas Vertex AI Search returns values between `0.0` and `1.0`).
-To sort these results together fairly, this strategy normalizes the scores of each engine's response relative to the maximum score in that specific response:
-$$score_{normalized} = \frac{score_{raw}}{score_{max\_in\_set}}$$
+Different search backends score hits on incompatible numerical scales (for example, Typesense text-match scores vs. Vertex AI Search `[0.0, 1.0]` relevance scores). Sorting raw scores directly would let one backend permanently dominate page one.
 
-- If a document does not contain a relevance score, it is assigned a fallback score based on its rank (position) in its engine's original results to preserve its order.
-- Finally, all results are merged and sorted by their `score_normalized` descending.
-- **When to use**: Best when you want to prioritize the most relevant results across all backends. This ensures that a highly confident documentation match from Vertex AI appears above a lower-confidence catalog match from Typesense, even if their raw scores cannot be compared directly.
+```text
+┌─────────────────────────────────────────────────────────────────────────────────────────────┐
+│                       Federated Result Merging Strategies (Example)                         │
+├─────────────────────────────────────────────────────────────────────────────────────────────┤
+│  Example Engine Responses (Heterogeneous Scoring Scales)                                    │
+│  • Engine A Hits (e.g. BM25 / Text Match): [ Doc A1 (450),  Doc A2 (210),  Doc A3 (90) ]    │
+│  • Engine B Hits (e.g. Semantic Score):    [ Doc B1 (0.92), Doc B2 (0.84), Doc B3 (0.61) ]  │
+├─────────────────────────────────────────────┬───────────────────────────────────────────────┤
+│  Strategy 1: interleave (Default)           │  Strategy 2: score-normalized-sort            │
+├─────────────────────────────────────────────┼───────────────────────────────────────────────┤
+│  • Ignores numerical scores                 │  • Scales scores onto [0.0, 1.0] per batch    │
+│  • Alternates engines by rank position      │  • Sorts globally by normalized score         │
+│                                             │                                               │
+│  Merged Order:                              │  Normalized Scores:                           │
+│  1. Doc A1 (Engine A, Rank 1)               │  • Engine A: A1 (1.00), A2 (0.47), A3 (0.20)  │
+│  2. Doc B1 (Engine B, Rank 1)               │  • Engine B: B1 (1.00), B2 (0.91), B3 (0.66)  │
+│  3. Doc A2 (Engine A, Rank 2)               │                                               │
+│  4. Doc B2 (Engine B, Rank 2)               │  Merged Order (Descending):                   │
+│  ...                                        │  1. Doc A1 (1.00) / Doc B1 (1.00)             │
+│                                             │  2. Doc B2 (0.91), 3. Doc B3 (0.66) ...       │
+└─────────────────────────────────────────────┴───────────────────────────────────────────────┘
+```
+
+1. **`interleave` (Default)**: Pulls one hit from each engine's result list in round-robin order. Choose this when you want guaranteed equal representation from every category on the first page.
+2. **`score-normalized-sort`**: Divides each hit's score by the maximum score in that engine's batch (`score / maxScore`). When an engine returns hits without numerical scores, the router assigns linear rank-decay fallback scores (`1 - index / length`) to preserve internal rank order before sorting all hits descending.
 
 > [!IMPORTANT]
 >
-> **Enforcing Page Limits & Pagination Behaviors**:
+> **Pagination Behavior**:
 >
-> - **Single-Engine Routing (Full Pagination)**: If a query maps exclusively to a single registered sub-engine (for example, when a developer is browsing a specialized tab like "Documentation" or "Services"), the router forwards the entire query directly. Any pagination cursor returned by that sub-engine is passed straight back to the client, enabling **100% native, deep pagination**.
-> - **Multi-Engine Routing (Capped Page 1 Results)**: If a search query is federated in parallel across multiple engines (e.g. global search), each engine independently returns its top `pageLimit` results. To prevent a bloated payload (which would contain up to `N * pageLimit` items), the router consolidates the result sets, **slices the consolidated array** to respect the client's `pageLimit`, and returns the results **without a pagination `cursor`**.
-> - **The Reason**: Pagination cursors are engine-specific and cannot be merged or offset-aligned across completely separate search backends (like Typesense and Vertex AI Search) once their results have been interleaved or sorted together. Capping federated results to a single page is a standard search design pattern: developers get top-relevance blended matches globally on page 1, and click specialized scoped tabs (which invoke the single-engine path) to browse deeper.
+> - **Single-engine queries** forward `pageLimit` and `pageCursor` directly to the target sub-engine and return its `nextPageCursor` unchanged for full multi-page navigation.
+> - **Multi-engine federated queries** slice the merged array to `pageLimit` (default `25`) and omit `nextPageCursor` because engine-specific cursors cannot be offset-aligned across separate backends after interleaving or score normalization. Users paginate deeply by selecting a category tab, which routes through the single-engine path.
 
 ---
 
-## 🔌 Installation
+## Installation
 
-First, install the package in your Backstage backend package:
+Install the router and desired sub-engine packages in `packages/backend`:
 
 ```bash
-yarn --cwd packages/backend add @backstage-community/plugin-search-backend-module-hybrid
+yarn --cwd packages/backend add \
+  @backstage-community/plugin-search-backend-module-hybrid \
+  @backstage-community/plugin-search-backend-module-typesense \
+  @backstage-community/plugin-search-backend-module-vertexai
 ```
 
-Then, add it to your `packages/backend/src/index.ts` alongside any other plugins/modules:
+Register the router alongside the `/hybrid` entry points of each sub-engine in `packages/backend/src/index.ts`:
 
 ```typescript
 // packages/backend/src/index.ts
@@ -76,67 +142,57 @@ import { createBackend } from '@backstage/backend-defaults';
 
 const backend = createBackend();
 
-// ... other plugins ...
-
+backend.add(import('@backstage/plugin-search-backend'));
 backend.add(import('@backstage-community/plugin-search-backend-module-hybrid'));
+
+// Sub-engines MUST use their /hybrid subpath exports in Hybrid mode
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-typesense/hybrid'),
+);
+backend.add(
+  import('@backstage-community/plugin-search-backend-module-vertexai/hybrid'),
+);
 
 backend.start();
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
-The full configuration is defined in your `app-config.yaml`. Under the `hybrid.routing` block, specify which engine name handles which document type, and configure the credentials and parameters for the sub-engines:
+Configure `search.engines.hybrid` alongside your sub-engines in `app-config.yaml`:
 
 ```yaml
 search:
   engines:
     hybrid:
-      # Options: 'interleave' (default round-robin) or 'score-normalized-sort'
       mergeStrategy: score-normalized-sort
       routing:
         software-catalog: typesense
         techdocs: vertexai
-        default: typesense # Fallback engine for types without explicit mapping
+        default: typesense
     typesense:
-      apiKey: ${typesenseApiKey}
+      apiKey: ${TYPESENSE_API_KEY}
       nodes:
         - host: localhost
           port: 8108
           protocol: http
-      # Additional raw options passed straight to the Typesense Client
-      clientOptions:
-        connectionTimeoutSeconds: 5
-        numRetries: 3
-        logLevel: info
-      # Customizable schemas and query parameters per collection
       collections:
         software-catalog:
           fields:
             - name: '.*'
               type: 'auto'
-            - name: 'embedding'
-              type: 'float[]'
-              num_dim: 384
-              model_config:
-                model_name: 'ts/all-MiniLM-L6-v2' # Optional vector search model config
           searchOptions:
-            query_by: 'title,text,location,embedding'
+            query_by: 'title,text,location'
     vertexai:
       types:
         techdocs:
+          indexing:
+            enabled: false
           datastore:
-            projectId: ${projectId}
-            datastoreId: ${dataStoreId}
-            location: ${location}
-          # Optional: Search App Engine ID. If specified, queries will target the Engine serving config
-          # rather than the standalone data store serving config, enabling advanced search features.
-          engine:
-            projectId: ${projectId}
-            engineId: ${engineId}
-            location: ${location}
-      # Configurable catalog cleanup task
+            projectId: ${GCP_PROJECT_ID}
+            datastoreId: ${VERTEX_TECHDOCS_DATASTORE_ID}
+            location: europe-west4
       cleanup:
         enabled: true
         frequency: { hours: 2 }
@@ -144,62 +200,72 @@ search:
 techdocs:
   publisher:
     googleGcs:
-      bucketName: my-techdocs-bucket
+      bucketName: ${TECHDOCS_GCS_BUCKET}
 ```
+
+### Parameter Reference Matrix
+
+| Parameter                                   | Type / Required                                      | Default        | Description                                                                                                                                 |
+| :------------------------------------------ | :--------------------------------------------------- | :------------- | :------------------------------------------------------------------------------------------------------------------------------------------ |
+| **`search.engines.hybrid.mergeStrategy`**   | `'interleave' \| 'score-normalized-sort'` (Optional) | `'interleave'` | Algorithm used to consolidate multi-engine search responses.                                                                                |
+| **`search.engines.hybrid.routing.<type>`**  | `string` (Optional)                                  | –              | Maps a Backstage document type (e.g., `software-catalog`, `techdocs`) to a registered sub-engine name (`typesense`, `vertexai`, or custom). |
+| **`search.engines.hybrid.routing.default`** | `string` (Optional)                                  | –              | Fallback sub-engine name used for collator indexing and queries targeting unmapped document types.                                          |
 
 ---
 
-## 🔌 Extension Point: `hybridSearchEngineRegistryExtensionPoint`
+## Integrating a Custom Sub-Engine (`hybridSearchEngineRegistryExtensionPoint`)
 
-Other backend modules can register their search engine implementations to the hybrid search router during their `init` phase.
-
-> [!NOTE]
->
-> - **If you are only using the pre-built sub-engines (Typesense / Vertex AI)**: You do not need to write this code. These modules are already fully implemented, and you only need to import them in your Backstage instance.
-> - **If you want to integrate a different search engine (e.g., Elasticsearch, Pg, etc.)**: You will need to implement a custom backend module following these examples to register your engine instance with the `hybridSearchEngineRegistryExtensionPoint`.
-
-### Example: Custom Search Engine Registration
-
-To register a custom search engine (e.g., Elasticsearch, PostgreSQL, etc.) with the Hybrid Search Router, create a custom search backend module that consumes the `hybridSearchEngineRegistryExtensionPoint`:
+Pre-built `/hybrid` modules are already included for Typesense and Vertex AI Search. To integrate another search backend (such as Elasticsearch or OpenSearch), implement Backstage's `SearchEngine` interface and register it with `hybridRegistry.registerEngine`:
 
 ```typescript
+import { Writable } from 'node:stream';
 import {
   coreServices,
   createBackendModule,
 } from '@backstage/backend-plugin-api';
+import {
+  QueryTranslator,
+  SearchEngine,
+} from '@backstage/plugin-search-backend-node';
+import {
+  IndexableResultSet,
+  SearchQuery,
+} from '@backstage/plugin-search-common';
 import { hybridSearchEngineRegistryExtensionPoint } from '@backstage-community/plugin-search-backend-module-hybrid';
-import { CustomSearchEngine } from './CustomSearchEngine'; // Your custom search engine class
 
-export const searchModuleCustomHybridSearch = createBackendModule({
+export class CustomSearchEngine implements SearchEngine {
+  setTranslator(_translator: QueryTranslator): void {}
+
+  async getIndexer(_type: string): Promise<Writable> {
+    return new Writable({
+      objectMode: true,
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+  }
+
+  async query(_query: SearchQuery): Promise<IndexableResultSet> {
+    return { results: [] };
+  }
+}
+
+export const searchModuleCustomHybrid = createBackendModule({
   pluginId: 'search',
   moduleId: 'custom-hybrid-search',
   register(env) {
     env.registerInit({
       deps: {
         hybridRegistry: hybridSearchEngineRegistryExtensionPoint,
-        config: coreServices.rootConfig,
         logger: coreServices.logger,
       },
-      async init({ hybridRegistry, config, logger }) {
-        logger.info(
-          'Initializing Custom Search Engine for Hybrid Search Router.',
-        );
+      async init({ hybridRegistry, logger }) {
+        logger.info('Registering custom sub-engine with Hybrid Search Router.');
+        const engine = new CustomSearchEngine();
 
-        // Instantiate your custom search engine implementation
-        const customSearchEngine = new CustomSearchEngine({
-          logger,
-          config,
+        hybridRegistry.registerEngine('custom-engine', engine, {
+          supportsTypes: ['software-catalog', 'custom-type'],
         });
-
-        // Register the engine instance to the Hybrid Registry,
-        // specifying the document types (categories) it supports.
-        hybridRegistry.registerEngine(
-          'custom-engine-name',
-          customSearchEngine,
-          {
-            supportsTypes: ['software-catalog', 'custom-type'],
-          },
-        );
       },
     });
   },
