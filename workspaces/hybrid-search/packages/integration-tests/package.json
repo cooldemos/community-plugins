@@ -1,0 +1,48 @@
+{
+  "name": "@internal/integration-tests",
+  "version": "1.0.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backstage/community-plugins",
+    "directory": "workspaces/hybrid-search/packages/integration-tests"
+  },
+  "backstage": {
+    "role": "backend"
+  },
+  "dependencies": {
+    "@backstage-community/plugin-events-backend-module-gcs-eventarc": "workspace:*",
+    "@backstage-community/plugin-search-backend-module-hybrid": "workspace:*",
+    "@backstage-community/plugin-search-backend-module-typesense": "workspace:*",
+    "@backstage-community/plugin-search-backend-module-vertexai": "workspace:*",
+    "@backstage/backend-plugin-api": "^1.9.0",
+    "@backstage/plugin-catalog-node": "^2.2.1",
+    "@backstage/plugin-events-backend": "^0.6.1",
+    "@backstage/plugin-search-backend": "^2.1.1",
+    "@backstage/plugin-search-backend-module-catalog": "^0.3.14",
+    "@backstage/plugin-search-backend-module-techdocs": "^0.4.13",
+    "@google-cloud/discoveryengine": "^2.7.0",
+    "@google-cloud/storage": "^7.19.0",
+    "supertest": "^6.3.3",
+    "typesense": "^3.0.6"
+  },
+  "devDependencies": {
+    "@backstage/backend-test-utils": "^1.11.3",
+    "@backstage/cli": "^0.36.2",
+    "@types/supertest": "^6.0.2"
+  },
+  "scripts": {
+    "test": "backstage-cli package test"
+  },
+  "jest": {
+    "id": "integration-tests",
+    "moduleNameMapper": {
+      "^@google-cloud/discoveryengine(.*)$": "<rootDir>/mockDiscoveryEngine",
+      "^@google-cloud/storage(.*)$": "<rootDir>/mockStorage",
+      "^typesense(.*)$": "<rootDir>/mockTypesense"
+    },
+    "transformIgnorePatterns": [
+      "/node_modules/(?!(node-fetch|data-uri-to-buffer|fetch-blob|formdata-polyfill)/)"
+    ]
+  }
+}
