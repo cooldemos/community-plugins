@@ -75,6 +75,7 @@ yarn.lock                                                               @backsta
 /workspaces/graphiql                                                    @backstage/community-plugins-maintainers
 /workspaces/graphql-voyager                                             @backstage/community-plugins-maintainers
 /workspaces/healert                                                     @backstage/community-plugins-maintainers  @amgadmag  @israa-mosad
+/workspaces/hybrid-search                                               @backstage/community-plugins-maintainers  @apichick
 /workspaces/ilert                                                       @backstage/community-plugins-maintainers
 /workspaces/jaeger                                                      @backstage/community-plugins-maintainers
 /workspaces/jenkins                                                     @backstage/community-plugins-maintainers

@@ -1,0 +1,235 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import {
+  LoggerService,
+  RootConfigService,
+  AuthService,
+} from '@backstage/backend-plugin-api';
+import { CatalogService } from '@backstage/plugin-catalog-node';
+import { Storage } from '@google-cloud/storage';
+import { DocumentServiceClient } from '@google-cloud/discoveryengine';
+import crypto from 'crypto';
+
+/**
+ * Sweeps orphaned TechDocs prefixes from GCS and purges their corresponding documents from Vertex AI Search
+ * when catalog entities have been removed and external TechDocs ingestion is active.
+ */
+export async function runCatalogCleanupSweeper(options: {
+  config: RootConfigService;
+  logger: LoggerService;
+  catalog: CatalogService;
+  auth: AuthService;
+}) {
+  const { config, logger, catalog, auth } = options;
+  const storage = new Storage();
+
+  // Read configured TechDocs GCS bucket name
+  const bucketName = config.getOptionalString(
+    'techdocs.publisher.googleGcs.bucketName',
+  );
+
+  if (!bucketName) {
+    logger.warn(
+      'TechDocs GCS bucketName is not configured. TechDocs Orphan Sweeper is disabled.',
+    );
+    return;
+  }
+
+  try {
+    logger.info('TechDocs Orphan Sweeper: starting sweep...');
+
+    // Retrieve system credentials to authenticate the catalog client call
+    const credentials = await auth.getOwnServiceCredentials();
+
+    // 1. Fetch all active entities from Catalog
+    const catalogResponse = await catalog.getEntities(
+      {
+        fields: ['metadata.name', 'metadata.namespace', 'kind'],
+      },
+      { credentials },
+    );
+
+    const activeEntities = catalogResponse.items || [];
+    const activeEntityKeys = new Set(
+      activeEntities.map((e: any) => {
+        const name = e.metadata.name;
+        const namespace = e.metadata.namespace || 'default';
+        const kind = e.kind || 'component';
+        return `${namespace}/${kind}/${name}`.toLowerCase();
+      }),
+    );
+
+    logger.info(
+      `TechDocs Orphan Sweeper: found ${activeEntityKeys.size} active entities in catalog.`,
+    );
+
+    // 2. List all files in the TechDocs bucket
+    const [files] = await storage.bucket(bucketName!).getFiles();
+    const orphanPrefixes = new Set<string>();
+
+    for (const file of files) {
+      const parts = file.name.split('/');
+      // GCS paths are formatted as: namespace/kind/name/...
+      if (parts.length >= 3) {
+        const namespace = parts[0];
+        const kind = parts[1];
+        const name = parts[2];
+
+        const key = `${namespace}/${kind}/${name}`.toLowerCase();
+        if (!activeEntityKeys.has(key)) {
+          orphanPrefixes.add(`${namespace}/${kind}/${name}`);
+        }
+      }
+    }
+
+    if (orphanPrefixes.size === 0) {
+      logger.info('TechDocs Orphan Sweeper: no orphaned folders found in GCS.');
+      return;
+    }
+
+    logger.info(
+      `TechDocs Orphan Sweeper: found ${
+        orphanPrefixes.size
+      } orphaned folders to purge: ${Array.from(orphanPrefixes).join(', ')}`,
+    );
+
+    // 3. Initialize one reusable Discovery Engine client for the sweep and close it in finally
+    let docClient: DocumentServiceClient | undefined;
+    let parent: string | undefined;
+    try {
+      const techdocsConfig = config.getConfig(
+        'search.engines.vertexai.types.techdocs.datastore',
+      );
+      const location = techdocsConfig.getString('location');
+      const projectId = techdocsConfig.getString('projectId');
+      const dataStoreId = techdocsConfig.getString('datastoreId');
+
+      const apiEndpoint =
+        location !== 'global'
+          ? `${location}-discoveryengine.googleapis.com`
+          : undefined;
+
+      docClient = new DocumentServiceClient({ apiEndpoint });
+      parent = docClient.projectLocationCollectionDataStoreBranchPath(
+        projectId,
+        location,
+        'default_collection',
+        dataStoreId,
+        'default_branch',
+      );
+    } catch (vertexError) {
+      logger.error(
+        `TechDocs Orphan Sweeper: GDE client error during document purges:`,
+        vertexError as Error,
+      );
+    }
+
+    // 4. For each orphaned prefix, perform GDE & GCS cleanup
+    try {
+      for (const prefix of orphanPrefixes) {
+        const parts = prefix.split('/');
+        const entityNamespace = parts[0];
+        const kind = parts[1];
+        const name = parts[2];
+
+        logger.info(`TechDocs Orphan Sweeper: purging orphan ${prefix}...`);
+
+        // A. Try to read the orphaned component's search/search_index.json to delete documents in GDE
+        const gcsIndexPath = `${prefix}/search/search_index.json`;
+        let docs: Array<{
+          title: string;
+          text: string;
+          location: string;
+        }> = [];
+
+        try {
+          const file = storage.bucket(bucketName!).file(gcsIndexPath);
+          const [fileContent] = await file.download();
+          const searchIndex = JSON.parse(fileContent.toString('utf-8')) as {
+            docs: Array<{
+              title: string;
+              text: string;
+              location: string;
+            }>;
+          };
+          docs = searchIndex.docs || [];
+          logger.info(
+            `TechDocs Orphan Sweeper: found ${docs.length} pages in index for orphan ${prefix}.`,
+          );
+        } catch (readError) {
+          logger.warn(
+            `TechDocs Orphan Sweeper: search_index.json not found or unreadable for orphan ${prefix}. Skipping GDE document purges.`,
+          );
+        }
+
+        // B. Delete GDE indexed documents when client initialized cleanly (including root "" pages)
+        if (docs.length > 0 && docClient && parent) {
+          for (const doc of docs) {
+            if (typeof doc.location === 'string') {
+              const cleanLocation = doc.location.startsWith('/')
+                ? doc.location.slice(1)
+                : doc.location;
+              const canonicalPath = `/docs/${entityNamespace.toLowerCase()}/${kind.toLowerCase()}/${name.toLowerCase()}/${cleanLocation}`;
+              const docId = crypto
+                .createHash('md5')
+                .update(canonicalPath)
+                .digest('hex');
+
+              const docPath = `${parent}/documents/${docId}`;
+              try {
+                await docClient.deleteDocument({ name: docPath });
+                logger.info(
+                  `TechDocs Orphan Sweeper: purged document ${docId} (location: ${doc.location}) from Vertex AI Search.`,
+                );
+              } catch (delErr) {
+                logger.error(
+                  `TechDocs Orphan Sweeper: failed to delete document ${docId}:`,
+                  delErr as Error,
+                );
+              }
+            }
+          }
+        }
+
+        // C. WIPE STATIC FILES FROM GCS BUCKET
+        try {
+          const gcsPrefix = `${prefix}/`;
+          logger.info(
+            `TechDocs Orphan Sweeper: deleting GCS bucket files under: ${gcsPrefix}`,
+          );
+          await storage.bucket(bucketName!).deleteFiles({ prefix: gcsPrefix });
+          logger.info(
+            `TechDocs Orphan Sweeper: successfully deleted all GCS files for orphan ${prefix}.`,
+          );
+        } catch (gcsPurgeError) {
+          logger.error(
+            `TechDocs Orphan Sweeper: failed to clean GCS files for orphan ${prefix}:`,
+            gcsPurgeError as Error,
+          );
+        }
+      }
+    } finally {
+      await docClient?.close();
+    }
+
+    logger.info('TechDocs Orphan Sweeper: sweep cycle completed.');
+  } catch (error) {
+    logger.error(
+      'TechDocs Orphan Sweeper: sweep failed with error:',
+      error as Error,
+    );
+  }
+}
