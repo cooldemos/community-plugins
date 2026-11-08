@@ -51,6 +51,7 @@
   ],
   "configSchema": "config.d.ts",
   "jest": {
+    "id": "events-backend-module-gcs-eventarc",
     "moduleNameMapper": {
       "^@google-cloud/discoveryengine(.*)$": "<rootDir>/../../../packages/integration-tests/src/mockDiscoveryEngine",
       "^@google-cloud/storage(.*)$": "<rootDir>/../../../packages/integration-tests/src/mockStorage"

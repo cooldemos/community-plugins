@@ -35,6 +35,7 @@
     "test": "backstage-cli package test"
   },
   "jest": {
+    "id": "integration-tests",
     "moduleNameMapper": {
       "^@google-cloud/discoveryengine(.*)$": "<rootDir>/mockDiscoveryEngine",
       "^@google-cloud/storage(.*)$": "<rootDir>/mockStorage",

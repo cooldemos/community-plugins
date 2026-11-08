@@ -70,6 +70,7 @@
   ],
   "configSchema": "config.d.ts",
   "jest": {
+    "id": "search-backend-module-vertexai",
     "moduleNameMapper": {
       "^@google-cloud/discoveryengine(.*)$": "<rootDir>/../../../packages/integration-tests/src/mockDiscoveryEngine",
       "^@google-cloud/storage(.*)$": "<rootDir>/../../../packages/integration-tests/src/mockStorage"

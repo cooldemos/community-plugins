@@ -68,6 +68,7 @@
   ],
   "configSchema": "config.d.ts",
   "jest": {
+    "id": "search-backend-module-typesense",
     "moduleNameMapper": {
       "^typesense$": "<rootDir>/../../../packages/integration-tests/src/mockTypesense"
     }
