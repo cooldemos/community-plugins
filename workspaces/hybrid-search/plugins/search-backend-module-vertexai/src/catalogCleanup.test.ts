@@ -166,6 +166,7 @@ describe('runCatalogCleanupSweeper', () => {
     ]);
 
     const mockStaleDocs = [
+      { title: 'Root Home', text: 'root text', location: '' },
       { title: 'Stale Page 1', text: 'stale text', location: 'page1.html' },
     ];
     mockDownload.mockResolvedValueOnce([
@@ -195,6 +196,7 @@ describe('runCatalogCleanupSweeper', () => {
     );
     expect(mockDownload).toHaveBeenCalled();
 
+    expect(mockDeleteDocument).toHaveBeenCalledTimes(2);
     expect(mockDeleteDocument).toHaveBeenCalledWith({
       name: 'mock-parent-path/documents/00d8f682855e663978f294dc1d323001',
     });

@@ -1601,5 +1601,34 @@ describe('VertexAISearchEngine', () => {
         'Semantic segment content 1\n...\nSemantic segment content 2',
       );
     });
+
+    it('should preserve plain JavaScript arrays when unpacking snippets from derivedStructData', async () => {
+      mockSearch.mockResolvedValue([
+        [
+          {
+            document: {
+              name: 'doc-name',
+              structData: {
+                title: 'Plain Array Doc',
+                location: '/docs/default/component/my-comp/page.html',
+                text: 'Full fallback body',
+              },
+              derivedStructData: {
+                snippets: [{ snippet: 'Plain array snippet' }],
+              },
+            },
+          },
+        ],
+        undefined,
+        {},
+      ]);
+
+      const response = await engine.query({
+        term: 'search-term',
+        types: ['techdocs'],
+      });
+
+      expect(response.results[0].document.text).toBe('Plain array snippet');
+    });
   });
 });

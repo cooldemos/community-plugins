@@ -175,10 +175,10 @@ export async function runCatalogCleanupSweeper(options: {
           );
         }
 
-        // B. Delete GDE indexed documents when client initialized cleanly
+        // B. Delete GDE indexed documents when client initialized cleanly (including root "" pages)
         if (docs.length > 0 && docClient && parent) {
           for (const doc of docs) {
-            if (doc.location) {
+            if (typeof doc.location === 'string') {
               const cleanLocation = doc.location.startsWith('/')
                 ? doc.location.slice(1)
                 : doc.location;

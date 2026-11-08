@@ -153,6 +153,7 @@ interface ExtendedIndexableDocument extends IndexableDocument {
  */
 const unpackProtobuf = (val: any): any => {
   if (val === null || typeof val !== 'object') return val;
+  if (Array.isArray(val)) return val.map(unpackProtobuf);
 
   if ('stringValue' in val) return val.stringValue;
   if ('numberValue' in val) return val.numberValue;

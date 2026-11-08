@@ -346,8 +346,9 @@ describe('eventsModuleGcsEventarcWebhook', () => {
 
       expect(subscriberCallback).toBeDefined();
 
-      // Setup current version docs download
+      // Setup current version docs download (including root index.md with empty-string location)
       const mockDocs = [
+        { title: 'Root Home', text: 'Home text', location: '' },
         { title: 'Doc A', text: 'Some text', location: 'page1.html' },
         { title: 'Doc B', text: 'Some other text', location: 'page2.html' },
       ];
@@ -370,8 +371,9 @@ describe('eventsModuleGcsEventarcWebhook', () => {
         ],
       ]);
 
-      // Setup previous version docs download (Doc A and Doc C)
+      // Setup previous version docs download (Root Home, Doc A, and Doc C)
       const mockPrevDocs = [
+        { title: 'Root Home', text: 'Home text', location: '' },
         { title: 'Doc A', text: 'Some text', location: 'page1.html' },
         { title: 'Doc C', text: 'Stale doc', location: 'page3.html' }, // Stale, should be deleted
       ];
@@ -398,19 +400,28 @@ describe('eventsModuleGcsEventarcWebhook', () => {
         },
       );
 
-      // Assert import to Discovery Engine was called
+      // Assert import to Discovery Engine was called with canonical /docs/... locations and root "" page
       expect(mockImportDocuments).toHaveBeenCalledWith(
         expect.objectContaining({
           parent: 'mock-parent-path',
           inlineSource: {
             documents: expect.arrayContaining([
               expect.objectContaining({
+                jsonData: expect.stringContaining(
+                  '"location":"/docs/default/component/my-comp/"',
+                ),
+              }),
+              expect.objectContaining({
                 id: '91a9fc50bd9b95d35f92aa4b1da57ce4',
-                jsonData: expect.stringContaining('"location":"page1.html"'),
+                jsonData: expect.stringContaining(
+                  '"location":"/docs/default/component/my-comp/page1.html"',
+                ),
               }),
               expect.objectContaining({
                 id: '34eac29c15cd5085912deaf731ccc76a',
-                jsonData: expect.stringContaining('"location":"page2.html"'),
+                jsonData: expect.stringContaining(
+                  '"location":"/docs/default/component/my-comp/page2.html"',
+                ),
               }),
             ]),
           },

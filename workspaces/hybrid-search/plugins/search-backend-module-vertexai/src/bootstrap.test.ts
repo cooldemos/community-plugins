@@ -153,11 +153,12 @@ describe('bootstrap CLI script', () => {
 
   describe('processEntity', () => {
     it('should download GCS index, fetch catalog metadata, format NDJSON, and upload staging file', async () => {
-      // Mock GCS blob download containing 2 documents
+      // Mock GCS blob download containing root "", trailing-slash directory URL, and html page
       const mockIndexContent = JSON.stringify({
         docs: [
+          { title: 'Root Home', text: 'Home text', location: '' },
           { title: 'Doc 1', text: 'Text 1', location: 'page-1.html' },
-          { title: 'Doc 2', text: 'Text 2', location: 'page-2.html' },
+          { title: 'Guide Dir', text: 'Text 2', location: 'guide/' },
         ],
       });
       mockDownload.mockResolvedValue([Buffer.from(mockIndexContent)]);
@@ -196,20 +197,32 @@ describe('bootstrap CLI script', () => {
       // Parse the saved NDJSON entries
       const savedNdjson = mockSave.mock.calls[0][0];
       const lines = savedNdjson.split('\n');
-      expect(lines.length).toBe(2);
+      expect(lines.length).toBe(3);
 
-      const firstEntry = JSON.parse(lines[0]);
+      const rootData = JSON.parse(JSON.parse(lines[0]).jsonData);
+      expect(rootData.location).toBe('/docs/default/api/my-service/');
+      expect(rootData.path).toBe('');
+
+      const firstEntry = JSON.parse(lines[1]);
       expect(firstEntry.id).toBeDefined();
 
       const firstData = JSON.parse(firstEntry.jsonData);
       expect(firstData.title).toBe('Doc 1');
       expect(firstData.kind).toBe('API');
+      expect(firstData.location).toBe(
+        '/docs/default/api/my-service/page-1.html',
+      );
+      expect(firstData.path).toBe('page-1.html');
       expect(firstData.owner).toBe('group:default/team-a');
       expect(firstData.lifecycle).toBe('production');
       expect(firstData.componentType).toBe('openapi');
       expect(firstData.authorization.resourceRef).toBe(
         'api:default/my-service',
       );
+
+      const dirData = JSON.parse(JSON.parse(lines[2]).jsonData);
+      expect(dirData.location).toBe('/docs/default/api/my-service/guide/');
+      expect(dirData.path).toBe('guide/');
 
       logSpy.mockRestore();
     });

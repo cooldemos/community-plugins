@@ -23,12 +23,13 @@
     "build": "backstage-cli package build",
     "clean": "backstage-cli package clean",
     "lint": "backstage-cli package lint",
+    "postpack": "backstage-cli package postpack",
+    "prepack": "backstage-cli package prepack",
     "start": "backstage-cli package start",
     "test": "backstage-cli package test"
   },
   "dependencies": {
     "@backstage/backend-plugin-api": "^1.9.0",
-    "@backstage/config": "^1.3.7",
     "@backstage/plugin-search-backend-node": "^1.4.3",
     "@backstage/plugin-search-common": "^1.2.23"
   },
@@ -37,13 +38,8 @@
     "@backstage/cli": "^0.36.1"
   },
   "files": [
-    "dist"
+    "dist",
+    "config.d.ts"
   ],
-  "jest": {
-    "moduleNameMapper": {
-      "^@google-cloud/discoveryengine(.*)$": "<rootDir>/../../../packages/integration-tests/src/mockDiscoveryEngine",
-      "^@google-cloud/storage(.*)$": "<rootDir>/../../../packages/integration-tests/src/mockStorage",
-      "^typesense$": "<rootDir>/../../../packages/integration-tests/src/mockTypesense"
-    }
-  }
+  "configSchema": "config.d.ts"
 }

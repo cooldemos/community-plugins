@@ -28,17 +28,30 @@ import { catalogServiceRef } from '@backstage/plugin-catalog-node';
 const CE_TYPE_OBJECT_FINALIZED = 'google.cloud.storage.object.v1.finalized';
 const authClient = new OAuth2Client();
 
-/**
- * Generates a stable MD5 hash identifier for a search document.
- */
-function generateDocId(
+/** Formats a relative MkDocs page path into a canonical Backstage TechDocs route (`/docs/<namespace>/<kind>/<name>/<path>`). */
+function buildCanonicalDocLocation(
   namespace: string,
   kind: string,
   name: string,
   location: string,
 ): string {
   const cleanLocation = location.startsWith('/') ? location.slice(1) : location;
-  const canonicalPath = `/docs/${namespace.toLowerCase()}/${kind.toLowerCase()}/${name.toLowerCase()}/${cleanLocation}`;
+  return `/docs/${namespace.toLowerCase()}/${kind.toLowerCase()}/${name.toLowerCase()}/${cleanLocation}`;
+}
+
+/** Generates a stable MD5 hash identifier from a TechDocs page's canonical Backstage route. */
+function generateDocId(
+  namespace: string,
+  kind: string,
+  name: string,
+  location: string,
+): string {
+  const canonicalPath = buildCanonicalDocLocation(
+    namespace,
+    kind,
+    name,
+    location,
+  );
   return crypto.createHash('md5').update(canonicalPath).digest('hex');
 }
 
@@ -139,7 +152,7 @@ function createOidcMiddleware(
 
 /**
  * Transforms raw GCS TechDocs search documents into enriched Vertex AI Search JSON payloads,
- * preserving canonical entity `kind` casing while keeping `docId` and `authorization.resourceRef` deterministic.
+ * preserving canonical entity `kind` casing, full `/docs/...` routes, and root `index.md` (`""`) pages.
  */
 function mapSearchDocuments(
   docs: Array<{ title: string; text: string; location: string }>,
@@ -150,8 +163,16 @@ function mapSearchDocuments(
 ): Array<{ id: string; jsonData: string }> {
   const canonicalKind = entity?.kind || kind;
   return docs
-    .filter(doc => doc.title && doc.text && doc.location)
+    .filter(
+      doc => Boolean(doc.title && doc.text) && typeof doc.location === 'string',
+    )
     .map(doc => {
+      const canonicalLocation = buildCanonicalDocLocation(
+        namespace,
+        kind,
+        name,
+        doc.location,
+      );
       const docId = generateDocId(namespace, kind, name, doc.location);
       const docPayload = {
         id: docId,
@@ -159,7 +180,7 @@ function mapSearchDocuments(
         name,
         namespace,
         kind: canonicalKind,
-        location: doc.location,
+        location: canonicalLocation,
         text: doc.text,
         path: doc.location,
         owner: entity?.spec?.owner || 'unknown',
@@ -190,7 +211,7 @@ function computeIdsToDelete(
 ): string[] {
   const idsToDelete: string[] = [];
   for (const prevDoc of previousDocs) {
-    if (prevDoc.title && prevDoc.text && prevDoc.location) {
+    if (prevDoc.title && prevDoc.text && typeof prevDoc.location === 'string') {
       const prevId = generateDocId(namespace, kind, name, prevDoc.location);
       if (!currentDocIds.has(prevId)) {
         idsToDelete.push(prevId);

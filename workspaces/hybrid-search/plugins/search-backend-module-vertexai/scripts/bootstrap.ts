@@ -129,11 +129,16 @@ export async function processEntity(
     const text = doc.text;
     const location = doc.location;
 
-    if (!title || !text || !location || location.endsWith('/')) {
+    // Allow empty-string locations for root MkDocs index.md pages and trailing-slash directory URLs.
+    if (!title || !text || typeof location !== 'string') {
       continue;
     }
 
-    const docId = generateId(`${namespace}_${kind}_${name}_${location}`);
+    const cleanLocation = location.startsWith('/')
+      ? location.slice(1)
+      : location;
+    const canonicalLocation = `/docs/${namespace.toLowerCase()}/${kind.toLowerCase()}/${name.toLowerCase()}/${cleanLocation}`;
+    const docId = generateId(canonicalLocation);
     const structuredEntry = {
       id: docId,
       jsonData: JSON.stringify({
@@ -142,7 +147,7 @@ export async function processEntity(
         name,
         namespace,
         kind: canonicalKind,
-        location,
+        location: canonicalLocation,
         text,
         path: location,
         owner: entity?.spec?.owner || 'unknown',
