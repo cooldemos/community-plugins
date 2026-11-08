@@ -32,7 +32,8 @@ import {
 import { runCatalogCleanupSweeper } from './catalogCleanup';
 
 /**
- * Shared helper to construct and initialize the VertexAISearchEngine from config.
+ * Constructs and initializes a {@link VertexAISearchEngine} from `search.engines.vertexai` configuration,
+ * wiring blended search settings, engine-level indexing/retry tuning, and per-type datastore mappings.
  */
 export function createVertexAiSearchEngine(
   config: Config,
@@ -43,10 +44,13 @@ export function createVertexAiSearchEngine(
     vertexAiConfig.getOptional<VertexAIEngineOptions['blendedSearch']>(
       'blendedSearch',
     );
+  const indexing =
+    vertexAiConfig.getOptional<VertexAIEngineOptions['indexing']>('indexing');
   const types = vertexAiConfig.get<VertexAIEngineOptions['types']>('types');
 
   return new VertexAISearchEngine({
     blendedSearch,
+    indexing,
     types,
     logger,
   });

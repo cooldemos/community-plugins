@@ -39,7 +39,9 @@ import request from 'supertest';
 import {
   mockSearch,
   mockImportDocuments,
+  mockListDocuments,
   mockDeleteDocument,
+  mockClose,
 } from './mockDiscoveryEngine';
 import { mockDownload, mockGetFiles, mockDeleteFiles } from './mockStorage';
 import { mockTypesenseSearch } from './mockTypesense';
@@ -306,7 +308,8 @@ describe('Search Architecture Integration Tests', () => {
         'Mock Page',
       );
       expect(mockSearch).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: 'kind: ANY("component")' }),
+        expect.objectContaining({ filter: 'kind: ANY("Component")' }),
+        { autoPaginate: false },
       );
 
       // 4. Catalog Search without filters
@@ -329,7 +332,8 @@ describe('Search Architecture Integration Tests', () => {
         'Mock Page',
       );
       expect(mockSearch).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: 'kind: ANY("api")' }),
+        expect.objectContaining({ filter: 'kind: ANY("API")' }),
+        { autoPaginate: false },
       );
     } finally {
       await backend.stop();
@@ -421,7 +425,12 @@ describe('Search Architecture Integration Tests', () => {
       expect(globalScheduler).toBeDefined();
       await globalScheduler!.triggerTask('search_index_techdocs');
       await new Promise(resolve => setTimeout(resolve, 500));
+      expect(mockListDocuments).toHaveBeenCalledWith(
+        expect.objectContaining({ parent: 'mock-parent-path', pageSize: 1000 }),
+        { autoPaginate: false },
+      );
       expect(mockImportDocuments).toHaveBeenCalled();
+      expect(mockClose).toHaveBeenCalled();
 
       // 1. Global Search
       const responseGlobal = await request(server)
@@ -450,7 +459,8 @@ describe('Search Architecture Integration Tests', () => {
         'Mock Page',
       );
       expect(mockSearch).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: 'kind: ANY("component")' }),
+        expect.objectContaining({ filter: 'kind: ANY("Component")' }),
+        { autoPaginate: false },
       );
 
       // 4. Catalog Search without filters
@@ -473,7 +483,8 @@ describe('Search Architecture Integration Tests', () => {
         'Mock Page',
       );
       expect(mockSearch).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: 'kind: ANY("api")' }),
+        expect.objectContaining({ filter: 'kind: ANY("API")' }),
+        { autoPaginate: false },
       );
     } finally {
       await backend.stop();
@@ -592,7 +603,8 @@ describe('Search Architecture Integration Tests', () => {
         'Mock Page',
       );
       expect(mockSearch).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: 'kind: ANY("component")' }),
+        expect.objectContaining({ filter: 'kind: ANY("Component")' }),
+        { autoPaginate: false },
       );
 
       // 4. Catalog Search without filters (routed to Typesense)
@@ -711,7 +723,12 @@ describe('Search Architecture Integration Tests', () => {
       expect(globalScheduler).toBeDefined();
       await globalScheduler!.triggerTask('search_index_techdocs');
       await new Promise(resolve => setTimeout(resolve, 500));
+      expect(mockListDocuments).toHaveBeenCalledWith(
+        expect.objectContaining({ parent: 'mock-parent-path', pageSize: 1000 }),
+        { autoPaginate: false },
+      );
       expect(mockImportDocuments).toHaveBeenCalled();
+      expect(mockClose).toHaveBeenCalled();
 
       // 1. Global Search (hits both engines and merges results!)
       const responseGlobal = await request(server)
@@ -744,7 +761,8 @@ describe('Search Architecture Integration Tests', () => {
         'Mock Page',
       );
       expect(mockSearch).toHaveBeenLastCalledWith(
-        expect.objectContaining({ filter: 'kind: ANY("component")' }),
+        expect.objectContaining({ filter: 'kind: ANY("Component")' }),
+        { autoPaginate: false },
       );
 
       // 4. Catalog Search without filters (routed to Typesense)

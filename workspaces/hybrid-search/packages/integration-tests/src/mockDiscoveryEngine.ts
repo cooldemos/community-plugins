@@ -63,9 +63,21 @@ export const mockSearch = jest.fn().mockResolvedValue([
  */
 export const mockImportDocuments = jest.fn().mockResolvedValue([
   {
-    promise: jest.fn().mockResolvedValue({}),
+    name: 'mock-import-op',
+    promise: jest.fn().mockResolvedValue([{}, { failureCount: 0 }]),
   },
 ]);
+
+/**
+ * Mock Jest spy for the DocumentServiceClient.listDocuments method.
+ * Returns a standard Google GAX client tuple: `[documents, nextRequest, rawResponse]`.
+ */
+export const mockListDocuments = jest.fn().mockResolvedValue([[], null, {}]);
+
+/**
+ * Mock Jest spy for the DocumentServiceClient.close method.
+ */
+export const mockClose = jest.fn().mockResolvedValue(undefined);
 
 /**
  * Mock Jest spy for the DocumentServiceClient.projectLocationCollectionDataStoreBranchPath helper.
@@ -85,11 +97,13 @@ export class SearchServiceClient {
 /**
  * Mock DocumentServiceClient class matching the signature expected by the Vertex AI Search indexer stream.
  */
-export const mockDeleteDocument = jest.fn().mockResolvedValue({});
+export const mockDeleteDocument = jest.fn().mockResolvedValue([{}]);
 
 export class DocumentServiceClient {
   projectLocationCollectionDataStoreBranchPath =
     mockProjectLocationCollectionDataStoreBranchPath;
   importDocuments = mockImportDocuments;
+  listDocuments = mockListDocuments;
   deleteDocument = mockDeleteDocument;
+  close = mockClose;
 }

@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 import {
+  BatchSearchEngineIndexer,
   SearchEngine,
   QueryTranslator,
 } from '@backstage/plugin-search-backend-node';
@@ -58,6 +59,15 @@ export interface VertexAIEngineConfig {
 }
 
 /**
+ * Per-type options for enabling or disabling local indexing streams in Vertex AI Search.
+ * @public
+ */
+export interface VertexAITypeIndexingOptions {
+  /** If set to true, allows streaming document collator indexes directly for this document type. */
+  enabled?: boolean;
+}
+
+/**
  * Structured configuration for a specific document type's Google Cloud Data Store and App Engine.
  * @public
  */
@@ -72,8 +82,8 @@ export interface VertexAITypeConfig {
     'servingConfig' | 'query'
   > &
     Record<string, any>;
-  /** Optional override for local indexing stream configuration specific to this type. */
-  indexing?: VertexAIIndexingOptions;
+  /** Optional override for local indexing enablement specific to this type. */
+  indexing?: VertexAITypeIndexingOptions;
 }
 
 /**
@@ -87,6 +97,10 @@ export interface VertexAIIndexingOptions {
   batchSize?: number;
   /** Optional delay in milliseconds between batch uploads to throttle the ingestion rate. */
   throttleMs?: number;
+  /** Optional maximum retry attempts on transient gRPC errors (codes 4, 8, 14). Defaults to 3. */
+  maxRetries?: number;
+  /** Optional initial backoff delay in milliseconds before retrying transient gRPC errors. Defaults to 500. */
+  initialRetryDelayMs?: number;
 }
 
 /**
@@ -156,18 +170,50 @@ const unpackProtobuf = (val: any): any => {
   return result;
 };
 
+/** Transient gRPC status codes eligible for retry (DEADLINE_EXCEEDED, RESOURCE_EXHAUSTED, UNAVAILABLE). */
+const RETRYABLE_GRPC_CODES = new Set([4, 8, 14]);
+
+/** Recursively sorts object keys and strips undefined properties for deterministic JSON hashing. */
+const canonicalizeForHash = (val: unknown): unknown => {
+  if (Array.isArray(val)) {
+    return val.map(canonicalizeForHash);
+  }
+  if (val !== null && typeof val === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(val as Record<string, unknown>).sort()) {
+      const entry = (val as Record<string, unknown>)[key];
+      if (entry !== undefined) {
+        sorted[key] = canonicalizeForHash(entry);
+      }
+    }
+    return sorted;
+  }
+  return val;
+};
+
+/** Computes a deterministic SHA-256 content hash over a normalized document payload (excluding contentHash). */
+const computeContentHash = (doc: Record<string, unknown>): string => {
+  const { contentHash: _ignored, ...rest } = doc;
+  const canonicalJson = JSON.stringify(canonicalizeForHash(rest));
+  return crypto.createHash('sha256').update(canonicalJson).digest('hex');
+};
+
 /**
- * High-performance batching stream for importing documents directly into Google Cloud Vertex AI Search.
+ * Reconciling batch indexer for streaming Backstage collator documents into Google Cloud Vertex AI Search.
  *
- * Buffers index documents and flushes them in bulk batches of 100 using Discovery Engine inline imports
- * to minimize roundtrip latencies and bypass intermediate GCS staging.
- * Maps unique document IDs deterministically to prevent duplicate index entries.
+ * Implements a three-phase reconciliation cycle (`initialize` -> `index` -> `finalize`):
+ * 1. `initialize()` snapshots existing datastore document IDs and `contentHash` digests via explicit pagination.
+ * 2. `index()` normalizes missing `text` to `""`, skips unchanged documents via SHA-256 `contentHash` comparison,
+ *    and verifies long-running import operations for partial `failureCount` errors.
+ * 3. `finalize()` evicts stale documents absent from `seenIds` only when the collator stream ends cleanly.
  */
-class VertexAIWritableStream extends Writable {
-  private buffer: ExtendedIndexableDocument[] = [];
-  private batchSize: number;
-  private throttleMs: number;
-  private client: DocumentServiceClient;
+class VertexAISearchEngineIndexer extends BatchSearchEngineIndexer {
+  private readonly throttleMs: number;
+  private readonly maxRetries: number;
+  private readonly initialRetryDelayMs: number;
+  private readonly client: DocumentServiceClient;
+  private readonly existingHashes = new Map<string, string>();
+  private readonly seenIds = new Set<string>();
 
   constructor(
     private readonly options: {
@@ -176,12 +222,15 @@ class VertexAIWritableStream extends Writable {
       dataStoreId: string;
       batchSize: number;
       throttleMs?: number;
+      maxRetries?: number;
+      initialRetryDelayMs?: number;
       logger?: LoggerService;
     },
   ) {
-    super({ objectMode: true });
-    this.batchSize = options.batchSize;
+    super({ batchSize: options.batchSize });
     this.throttleMs = options.throttleMs ?? 0;
+    this.maxRetries = options.maxRetries ?? 3;
+    this.initialRetryDelayMs = options.initialRetryDelayMs ?? 500;
 
     const apiEndpoint =
       options.location !== 'global'
@@ -190,127 +239,218 @@ class VertexAIWritableStream extends Writable {
     this.client = new DocumentServiceClient({ apiEndpoint });
   }
 
-  /**
-   * Internal write handler. Buffers document chunks and flushes when batch limit is met.
-   */
-  async _write(
-    chunk: ExtendedIndexableDocument,
-    _encoding: string,
-    callback: (error?: Error | null) => void,
-  ): Promise<void> {
-    this.buffer.push(chunk);
-
-    if (this.buffer.length >= this.batchSize) {
-      try {
-        await this.flush();
-        callback();
-      } catch (err) {
-        this.options.logger?.error(
-          `Failed to flush batch to Vertex AI Search:`,
-          err as Error,
-        );
-        callback(err as Error);
-      }
-    } else {
-      callback();
-    }
-  }
-
-  /**
-   * Internal final handler. Ensures any remaining buffered documents are flushed.
-   */
-  async _final(callback: (error?: Error | null) => void): Promise<void> {
-    try {
-      await this.flush();
-      callback();
-    } catch (err) {
-      this.options.logger?.error(
-        `Failed to flush final stream buffer to Vertex AI Search:`,
-        err as Error,
-      );
-      callback(err as Error);
-    }
-  }
-
-  /**
-   * Flushes the current document buffer to Vertex AI Search using inline source import.
-   */
-  private async flush(): Promise<void> {
-    if (this.buffer.length === 0) return;
-
-    const parent = this.client.projectLocationCollectionDataStoreBranchPath(
+  /** Builds the Discovery Engine default branch resource path for the target datastore. */
+  private getBranchParent(): string {
+    return this.client.projectLocationCollectionDataStoreBranchPath(
       this.options.projectId,
       this.options.location,
       'default_collection',
       this.options.dataStoreId,
       'default_branch',
     );
+  }
 
-    const documents = this.buffer
-      .filter(doc => {
-        const hasTitle = !!doc.title;
-        const hasText = !!doc.text;
-        const hasLocation = !!doc.location;
-        if (!hasTitle || !hasText || !hasLocation) {
-          this.options.logger?.warn(
-            `Vertex AI Search: Skipping document from indexing due to missing required fields: ` +
-              `[title: ${hasTitle ? 'present' : 'MISSING'}, ` +
-              `text: ${hasText ? 'present' : 'MISSING'}, ` +
-              `location: ${hasLocation ? 'present' : 'MISSING'}]. ` +
-              `Location: "${doc.location || 'unknown'}"`,
-          );
-          return false;
+  /** Executes a Discovery Engine RPC with exponential backoff and random jitter on transient gRPC codes (4, 8, 14). */
+  private async withRetry<T>(fn: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await fn();
+      } catch (error) {
+        const grpcCode =
+          typeof (error as { code?: unknown })?.code === 'number'
+            ? (error as { code: number }).code
+            : undefined;
+        if (
+          grpcCode === undefined ||
+          !RETRYABLE_GRPC_CODES.has(grpcCode) ||
+          attempt >= this.maxRetries
+        ) {
+          throw error;
         }
-        return true;
-      })
-      .map(doc => {
-        const docId = crypto
-          .createHash('md5')
-          .update(doc.location)
-          .digest('hex');
 
-        return {
-          id: docId,
-          jsonData: JSON.stringify({
-            id: docId,
-            ...doc,
-          }),
-        };
+        // Apply exponential backoff plus up to 25% random jitter to prevent synchronized retry bursts across collators.
+        const baseDelay = this.initialRetryDelayMs * Math.pow(2, attempt);
+        const jitter =
+          baseDelay > 0
+            ? Math.floor(Math.random() * (baseDelay * 0.25 + 1))
+            : 0;
+        const delayMs = baseDelay + jitter;
+
+        this.options.logger?.warn(
+          `Vertex AI Search: Transient gRPC error (code ${grpcCode}) on attempt ${
+            attempt + 1
+          }/${this.maxRetries + 1} for dataStore "${
+            this.options.dataStoreId
+          }". Retrying in ${delayMs}ms...`,
+        );
+        if (delayMs > 0) {
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
+    }
+  }
+
+  /** Pages through existing datastore documents to snapshot stored `contentHash` digests before indexing begins. */
+  async initialize(): Promise<void> {
+    const parent = this.getBranchParent();
+    let pageToken: string | undefined = undefined;
+
+    do {
+      const request: protos.google.cloud.discoveryengine.v1.IListDocumentsRequest =
+        pageToken
+          ? { parent, pageSize: 1000, pageToken }
+          : { parent, pageSize: 1000 };
+      const [docs, nextRequest, rawResponse] = await this.withRetry(() =>
+        this.client.listDocuments(request, { autoPaginate: false }),
+      );
+
+      for (const storedDoc of docs || []) {
+        const docId =
+          storedDoc.id ||
+          (typeof storedDoc.name === 'string'
+            ? storedDoc.name.split('/').pop()
+            : undefined);
+        if (!docId) {
+          continue;
+        }
+
+        let storedHash = '';
+        if (storedDoc.structData) {
+          const unpacked = unpackProtobuf(storedDoc.structData);
+          if (typeof unpacked?.contentHash === 'string') {
+            storedHash = unpacked.contentHash;
+          }
+        }
+        if (!storedHash && typeof storedDoc.jsonData === 'string') {
+          try {
+            const parsed = JSON.parse(storedDoc.jsonData);
+            if (typeof parsed?.contentHash === 'string') {
+              storedHash = parsed.contentHash;
+            }
+          } catch {
+            // Malformed legacy jsonData defaults to an empty hash so it will be refreshed or evicted.
+          }
+        }
+
+        this.existingHashes.set(docId, storedHash);
+      }
+
+      pageToken =
+        rawResponse?.nextPageToken ||
+        (nextRequest as { pageToken?: string } | null)?.pageToken ||
+        undefined;
+    } while (pageToken);
+
+    this.options.logger?.debug(
+      `Vertex AI Search: Snapshot initialized with ${this.existingHashes.size} existing document(s) in dataStore "${this.options.dataStoreId}".`,
+    );
+  }
+
+  /** Validates, hashes, and imports only changed documents in the current batch into Vertex AI Search. */
+  async index(documents: IndexableDocument[]): Promise<void> {
+    if (documents.length === 0) {
+      return;
+    }
+
+    const parent = this.getBranchParent();
+    const changedDocuments: Array<{ id: string; jsonData: string }> = [];
+    let validCount = 0;
+
+    for (const rawDoc of documents as ExtendedIndexableDocument[]) {
+      const hasTitle = !!rawDoc.title;
+      const hasLocation = !!rawDoc.location;
+      if (!hasTitle || !hasLocation) {
+        this.options.logger?.warn(
+          `Vertex AI Search: Skipping document from indexing due to missing required fields: ` +
+            `[title: ${hasTitle ? 'present' : 'MISSING'}, ` +
+            `location: ${hasLocation ? 'present' : 'MISSING'}]. ` +
+            `Location: "${rawDoc.location || 'unknown'}"`,
+        );
+        continue;
+      }
+
+      validCount++;
+      const docId = crypto
+        .createHash('md5')
+        .update(rawDoc.location)
+        .digest('hex');
+
+      // Record every valid document ID so unchanged documents are preserved during clean-end eviction.
+      this.seenIds.add(docId);
+
+      // Catalog entities without a description emit undefined/empty text; normalize to "" so they remain searchable.
+      const { contentHash: _ignoredHash, ...restDoc } = rawDoc;
+      const normalizedDoc: Record<string, unknown> = {
+        ...restDoc,
+        id: docId,
+        text: rawDoc.text ?? '',
+      };
+
+      const contentHash = computeContentHash(normalizedDoc);
+      if (this.existingHashes.get(docId) === contentHash) {
+        continue;
+      }
+
+      changedDocuments.push({
+        id: docId,
+        jsonData: JSON.stringify({
+          ...normalizedDoc,
+          contentHash,
+        }),
       });
+    }
 
-    const skippedCount = this.buffer.length - documents.length;
-    if (skippedCount > 0) {
+    const skippedInvalidCount = documents.length - validCount;
+    if (skippedInvalidCount > 0) {
       this.options.logger?.warn(
-        `Vertex AI Search: Filtered out ${skippedCount} invalid documents from the batch of ${this.buffer.length}.`,
+        `Vertex AI Search: Filtered out ${skippedInvalidCount} invalid documents from the batch of ${documents.length}.`,
       );
     }
 
-    this.buffer = [];
-
-    if (documents.length === 0) {
-      this.options.logger?.info(
-        `Vertex AI Search: No valid documents left to flush in this batch.`,
+    if (changedDocuments.length === 0) {
+      this.options.logger?.debug(
+        `Vertex AI Search: Skipping batch import for dataStore "${this.options.dataStoreId}" (0 changed documents).`,
       );
       return;
     }
 
     this.options.logger?.info(
-      `Flushing ${documents.length} documents to Vertex AI Search dataStore: ${this.options.dataStoreId}`,
+      `Flushing ${changedDocuments.length} changed documents to Vertex AI Search dataStore: ${this.options.dataStoreId}`,
     );
 
     try {
-      const [operation] = await this.client.importDocuments({
-        parent,
-        inlineSource: {
-          documents: documents as any,
-        },
-        reconciliationMode: 'INCREMENTAL',
-      } as any);
+      await this.withRetry(async () => {
+        const [operation] = await this.client.importDocuments({
+          parent,
+          inlineSource: {
+            documents: changedDocuments as any,
+          },
+          reconciliationMode: 'INCREMENTAL',
+        } as any);
 
-      this.options.logger?.debug(
-        `Spawned import operation: ${operation.name}. Waiting...`,
-      );
-      await (operation as any).promise();
+        this.options.logger?.debug(
+          `Spawned import operation: ${operation.name}. Waiting...`,
+        );
+        const opResult = await (operation as any).promise();
+        const [response, metadata] = Array.isArray(opResult)
+          ? opResult
+          : [opResult, undefined];
+
+        // Discovery Engine LROs resolve even on per-document schema/validation failures; abort so finalize() skips eviction.
+        const failureCount = Number(metadata?.failureCount ?? 0);
+        if (failureCount > 0) {
+          const errorSamples = response?.errorSamples ?? [];
+          this.options.logger?.error(
+            `Vertex AI Search: importDocuments reported ${failureCount} failed document(s) in dataStore "${
+              this.options.dataStoreId
+            }". Error samples: ${JSON.stringify(errorSamples)}`,
+          );
+          throw new Error(
+            `Vertex AI Search importDocuments failed for ${failureCount} document(s) in dataStore "${this.options.dataStoreId}"`,
+          );
+        }
+      });
+
       this.options.logger?.info(`Successfully imported batch of documents.`);
 
       if (this.throttleMs > 0) {
@@ -327,14 +467,70 @@ class VertexAIWritableStream extends Writable {
       throw error;
     }
   }
+
+  /** Evicts stored documents that were not observed during a completed, error-free collator stream. */
+  async finalize(): Promise<void> {
+    const parent = this.getBranchParent();
+    const staleIds: string[] = [];
+
+    for (const existingId of this.existingHashes.keys()) {
+      if (!this.seenIds.has(existingId)) {
+        staleIds.push(existingId);
+      }
+    }
+
+    if (staleIds.length === 0) {
+      return;
+    }
+
+    this.options.logger?.info(
+      `Vertex AI Search: Evicting ${staleIds.length} stale document(s) from dataStore "${this.options.dataStoreId}"...`,
+    );
+
+    for (const staleId of staleIds) {
+      const name = `${parent}/documents/${staleId}`;
+      try {
+        await this.withRetry(() => this.client.deleteDocument({ name }));
+      } catch (error) {
+        const grpcCode =
+          typeof (error as { code?: unknown })?.code === 'number'
+            ? (error as { code: number }).code
+            : undefined;
+        // Ignore NOT_FOUND (gRPC code 5) when concurrent cleanup already removed the document.
+        if (grpcCode === 5) {
+          continue;
+        }
+        throw error;
+      }
+    }
+  }
+
+  /** Closes the underlying Discovery Engine gRPC channel whenever the stream finishes or aborts. */
+  override _destroy(
+    error: Error | null,
+    callback: (error?: Error | null) => void,
+  ): void {
+    Promise.resolve()
+      .then(() => this.client.close())
+      .catch(closeErr => {
+        this.options.logger?.warn(
+          `Vertex AI Search: Failed to close DocumentServiceClient for dataStore "${
+            this.options.dataStoreId
+          }": ${(closeErr as Error)?.message ?? closeErr}`,
+        );
+      })
+      .finally(() => {
+        callback(error);
+      });
+  }
 }
 
 /**
  * SearchEngine implementation for Google Cloud Vertex AI Search.
  *
- * Handles routing read-only semantic search requests to Vertex AI Search
- * Generic stores or Search Apps using the Discovery Engine API.
- * Local document indexing is bypassed.
+ * Routes semantic search queries to Vertex AI Search Data Stores or Search Apps via the Discovery Engine API,
+ * and supports optional direct collator reconciliation via `BatchSearchEngineIndexer` alongside external
+ * event-driven GCS ingestion.
  *
  * @public
  */
@@ -376,23 +572,6 @@ export class VertexAISearchEngine implements SearchEngine {
     // Pre-build lookup map of datastore IDs to Backstage types for instant O(1) query resolution
     for (const [type, config] of Object.entries(this.options.types)) {
       this.datastoreTypeMap.set(config.datastore.datastoreId, type);
-    }
-
-    // Safety guardrail: override if indexing is disabled for software-catalog
-    const catalogConfig = this.options.types?.['software-catalog'];
-    if (catalogConfig) {
-      const isCatalogIndexingEnabled =
-        catalogConfig.indexing?.enabled !== undefined
-          ? catalogConfig.indexing.enabled
-          : this.options.indexing?.enabled;
-
-      if (isCatalogIndexingEnabled === false) {
-        this.options.logger?.info(
-          `Vertex AI Search: Local indexing was configured as disabled for "software-catalog". ` +
-            `This has been overridden to ENABLED because the Software Catalog is a highly dynamic metadata store ` +
-            `that requires direct local indexing to keep the search index in sync.`,
-        );
-      }
     }
 
     this.options.logger?.info(
@@ -474,26 +653,18 @@ export class VertexAISearchEngine implements SearchEngine {
   }
 
   /**
-   * Returns a Writable stream to index documents.
+   * Returns a Writable stream to index documents for a given Backstage document type.
    *
-   * If indexing.enabled is configured to true, returns a VertexAIWritableStream to push documents
-   * directly to the target Vertex AI Search data store.
-   * Otherwise, returns a dummy no-op stream to gracefully bypass local indexing without throwing errors.
+   * When indexing is enabled (either globally on the engine or overridden per type), returns a
+   * reconciling batch indexer configured with the engine's batch, throttle, and retry settings.
+   * Otherwise, returns a no-op stream so external ingestion pipelines can own the datastore.
    */
   async getIndexer(type: string): Promise<Writable> {
     const typeConfig = this.options.types?.[type];
-    // Resolve type-specific indexing setting (overrides global default)
-    let isIndexingEnabled =
+    const isIndexingEnabled =
       typeConfig?.indexing?.enabled !== undefined
         ? typeConfig.indexing.enabled
         : this.options.indexing?.enabled;
-
-    if (type === 'software-catalog' && isIndexingEnabled === false) {
-      this.options.logger?.info(
-        `Vertex AI Search: Forcing indexing to enabled for "software-catalog". Catalog indexing cannot be bypassed.`,
-      );
-      isIndexingEnabled = true;
-    }
 
     if (isIndexingEnabled) {
       if (typeConfig) {
@@ -503,25 +674,23 @@ export class VertexAISearchEngine implements SearchEngine {
             `Location could not be resolved for indexing type "${type}".`,
           );
         }
-        const batchSize =
-          typeConfig.indexing?.batchSize ??
-          this.options.indexing?.batchSize ??
-          100;
-
-        const throttleMs =
-          typeConfig.indexing?.throttleMs ??
-          this.options.indexing?.throttleMs ??
-          0;
+        const batchSize = this.options.indexing?.batchSize ?? 100;
+        const throttleMs = this.options.indexing?.throttleMs ?? 0;
+        const maxRetries = this.options.indexing?.maxRetries ?? 3;
+        const initialRetryDelayMs =
+          this.options.indexing?.initialRetryDelayMs ?? 500;
 
         this.options.logger?.info(
-          `Vertex AI Search: Direct indexing enabled for type "${type}" (batchSize: ${batchSize}, throttleMs: ${throttleMs}ms). Streaming to project "${typeConfig.datastore.projectId}" location "${location}" dataStore "${typeConfig.datastore.datastoreId}"...`,
+          `Vertex AI Search: Direct indexing enabled for type "${type}" (batchSize: ${batchSize}, throttleMs: ${throttleMs}ms, maxRetries: ${maxRetries}). Streaming to project "${typeConfig.datastore.projectId}" location "${location}" dataStore "${typeConfig.datastore.datastoreId}"...`,
         );
-        return new VertexAIWritableStream({
+        return new VertexAISearchEngineIndexer({
           projectId: typeConfig.datastore.projectId,
-          location: location,
+          location,
           dataStoreId: typeConfig.datastore.datastoreId,
-          batchSize: batchSize,
-          throttleMs: throttleMs,
+          batchSize,
+          throttleMs,
+          maxRetries,
+          initialRetryDelayMs,
           logger: this.options.logger,
         });
       }
@@ -610,12 +779,8 @@ export class VertexAISearchEngine implements SearchEngine {
     if (query.filters && Object.keys(query.filters).length > 0) {
       const expressions = Object.entries(query.filters).map(([key, val]) => {
         const arrayVal = Array.isArray(val) ? val : [val];
-        const normalizedList =
-          key === 'kind'
-            ? arrayVal.map(v => String(v).toLowerCase())
-            : arrayVal.map(v => String(v));
-
-        const list = normalizedList.map(v => JSON.stringify(v)).join(', ');
+        // Preserve canonical entity casing (e.g. "Component", "API") because Vertex AI string filters are case-sensitive.
+        const list = arrayVal.map(v => JSON.stringify(String(v))).join(', ');
         return `${key}: ANY(${list})`;
       });
       filterString = expressions.join(' AND ');
@@ -652,8 +817,10 @@ export class VertexAISearchEngine implements SearchEngine {
 
     try {
       const client = this.getSearchClient(targetLocation);
+      // Disable GAX auto-pagination so a single SearchQuery never walks every result page in the datastore.
       const [apiResults, , rawResponse] = await client.search(
         searchRequestPayload,
+        { autoPaginate: false },
       );
 
       const resultsCount = apiResults?.length || 0;

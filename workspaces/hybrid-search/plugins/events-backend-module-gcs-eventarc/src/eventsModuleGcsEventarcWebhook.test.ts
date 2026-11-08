@@ -635,6 +635,106 @@ describe('eventsModuleGcsEventarcWebhook', () => {
       expect(docPayload.lifecycle).toBe('unknown');
       expect(docPayload.componentType).toBe('');
       expect(docPayload.annotations).toEqual({});
+      expect(docPayload.kind).toBe('Component');
+    });
+
+    it('should store canonical entity.kind while keeping deterministic docId and lowercase authorization.resourceRef', async () => {
+      let subscriberCallback: any;
+      mockEventsService.subscribe.mockImplementation((sub: any) => {
+        subscriberCallback = sub.onEvent;
+      });
+
+      const mockCatalogService = {
+        getEntityByRef: jest.fn().mockResolvedValue({
+          apiVersion: 'backstage.io/v1alpha1',
+          kind: 'API',
+          metadata: { name: 'payments-api', namespace: 'default' },
+          spec: { owner: 'team-pay', lifecycle: 'production', type: 'openapi' },
+        }),
+      };
+
+      await startTestBackend({
+        features: [
+          ...getFeatures(),
+          createServiceFactory({
+            service: catalogServiceRef,
+            deps: {},
+            async factory() {
+              return mockCatalogService as any;
+            },
+          }),
+        ],
+      });
+
+      mockDownload.mockResolvedValueOnce([
+        Buffer.from(
+          JSON.stringify({
+            docs: [
+              { title: 'Spec', text: 'OpenAPI spec', location: 'index.html' },
+            ],
+          }),
+        ),
+      ]);
+      mockGetFiles.mockResolvedValueOnce([[]]);
+
+      // TechDocs publishes GCS paths using lowercase kind ('api')
+      await subscriberCallback({
+        topic: 'gcs-notifications',
+        eventPayload: {
+          bucket: 'my-bucket',
+          name: 'default/api/payments-api/search_index.json',
+          generation: 123456,
+        },
+      });
+
+      expect(mockImportDocuments).toHaveBeenCalledTimes(1);
+      const imported =
+        mockImportDocuments.mock.calls[0][0].inlineSource.documents[0];
+      const payload = JSON.parse(imported.jsonData);
+
+      expect(payload.kind).toBe('API');
+      expect(payload.authorization.resourceRef).toBe(
+        'api:default/payments-api',
+      );
+      expect(imported.id).toBe(payload.id);
+    });
+
+    it('should abort synchronization before delta deletions when importDocuments reports metadata.failureCount > 0', async () => {
+      let subscriberCallback: any;
+      mockEventsService.subscribe.mockImplementation((sub: any) => {
+        subscriberCallback = sub.onEvent;
+      });
+
+      await startTestBackend({
+        features: getFeatures(),
+      });
+
+      mockDownload.mockResolvedValueOnce([
+        Buffer.from(
+          JSON.stringify({
+            docs: [{ title: 'Doc A', text: 'Body', location: 'page1.html' }],
+          }),
+        ),
+      ]);
+
+      mockPromise.mockResolvedValueOnce([
+        { errorSamples: [{ code: 3, message: 'Schema error' }] },
+        { failureCount: 1 },
+      ]);
+
+      await subscriberCallback({
+        topic: 'gcs-notifications',
+        eventPayload: {
+          bucket: 'my-bucket',
+          name: 'default/Component/my-comp/search_index.json',
+          generation: 123456,
+        },
+      });
+
+      // Import ran, failed on failureCount > 0, and aborted BEFORE querying previous generations or deleting docs!
+      expect(mockImportDocuments).toHaveBeenCalledTimes(1);
+      expect(mockGetFiles).not.toHaveBeenCalled();
+      expect(mockDeleteDocument).not.toHaveBeenCalled();
     });
   });
 });

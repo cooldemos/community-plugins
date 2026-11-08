@@ -2,8 +2,13 @@
   "name": "@internal/integration-tests",
   "version": "1.0.0",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backstage/community-plugins",
+    "directory": "workspaces/hybrid-search/packages/integration-tests"
+  },
   "backstage": {
-    "role": "node-library"
+    "role": "backend"
   },
   "dependencies": {
     "@backstage-community/plugin-events-backend-module-gcs-eventarc": "workspace:*",

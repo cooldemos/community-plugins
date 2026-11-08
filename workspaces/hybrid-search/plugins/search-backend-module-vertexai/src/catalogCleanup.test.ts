@@ -40,6 +40,7 @@ jest.mock('@google-cloud/storage', () => {
 });
 
 const mockDeleteDocument = jest.fn();
+const mockClose = jest.fn();
 jest.mock('@google-cloud/discoveryengine', () => {
   return {
     DocumentServiceClient: jest.fn().mockImplementation(() => {
@@ -48,6 +49,7 @@ jest.mock('@google-cloud/discoveryengine', () => {
           .fn()
           .mockReturnValue('mock-parent-path'),
         deleteDocument: mockDeleteDocument,
+        close: mockClose,
       };
     }),
   };
@@ -61,6 +63,7 @@ describe('runCatalogCleanupSweeper', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockClose.mockResolvedValue(undefined);
 
     mockCatalog = {
       getEntities: jest.fn(),
@@ -389,5 +392,47 @@ describe('runCatalogCleanupSweeper', () => {
     expect(mockDownload).not.toHaveBeenCalled();
     expect(mockDeleteDocument).not.toHaveBeenCalled();
     expect(mockDeleteFiles).not.toHaveBeenCalled();
+  });
+
+  it('should reuse a single DocumentServiceClient across multiple orphaned prefixes and close it in finally', async () => {
+    const {
+      DocumentServiceClient: MockedDocumentServiceClient,
+    } = require('@google-cloud/discoveryengine');
+
+    mockCatalog.getEntities.mockResolvedValue({ items: [] });
+    mockGetFiles.mockResolvedValue([
+      [
+        { name: 'default/component/orphan-a/search/search_index.json' },
+        { name: 'default/component/orphan-b/search/search_index.json' },
+      ],
+    ]);
+
+    mockDownload
+      .mockResolvedValueOnce([
+        Buffer.from(
+          JSON.stringify({
+            docs: [{ title: 'Orphan A', text: 'text a', location: 'a.html' }],
+          }),
+        ),
+      ])
+      .mockResolvedValueOnce([
+        Buffer.from(
+          JSON.stringify({
+            docs: [{ title: 'Orphan B', text: 'text b', location: 'b.html' }],
+          }),
+        ),
+      ]);
+
+    await runCatalogCleanupSweeper({
+      config: mockConfig,
+      logger: mockLogger,
+      catalog: mockCatalog,
+      auth: mockAuth,
+    });
+
+    expect(MockedDocumentServiceClient).toHaveBeenCalledTimes(1);
+    expect(mockDeleteDocument).toHaveBeenCalledTimes(2);
+    expect(mockDeleteFiles).toHaveBeenCalledTimes(2);
+    expect(mockClose).toHaveBeenCalledTimes(1);
   });
 });

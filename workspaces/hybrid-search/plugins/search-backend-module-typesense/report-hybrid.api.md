@@ -6,7 +6,9 @@
 import { BackendFeature } from '@backstage/backend-plugin-api';
 
 // @public
-export const searchModuleTypesenseHybridSearch: BackendFeature;
+const searchModuleTypesenseHybridSearch: BackendFeature;
+export default searchModuleTypesenseHybridSearch;
+export { searchModuleTypesenseHybridSearch };
 
 // (No @packageDocumentation comment for this package)
 ```

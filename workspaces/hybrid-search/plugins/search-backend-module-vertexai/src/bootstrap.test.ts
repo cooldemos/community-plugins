@@ -48,6 +48,7 @@ jest.mock('@google-cloud/storage', () => {
 
 // 2. Mock @google-cloud/discoveryengine
 const mockImportDocuments = jest.fn();
+const mockClose = jest.fn();
 
 jest.mock('@google-cloud/discoveryengine', () => {
   return {
@@ -56,6 +57,7 @@ jest.mock('@google-cloud/discoveryengine', () => {
       projectLocationCollectionDataStoreBranchPath: jest
         .fn()
         .mockReturnValue('mock-gcp-path'),
+      close: mockClose,
     })),
   };
 });
@@ -63,6 +65,7 @@ jest.mock('@google-cloud/discoveryengine', () => {
 describe('bootstrap CLI script', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockClose.mockResolvedValue(undefined);
     global.fetch = jest.fn();
   });
 
@@ -159,13 +162,14 @@ describe('bootstrap CLI script', () => {
       });
       mockDownload.mockResolvedValue([Buffer.from(mockIndexContent)]);
 
-      // Mock Catalog Entity response
+      // Mock Catalog Entity response with canonical kind casing ('API') while GCS path is lowercase ('api')
       const mockEntity = {
+        kind: 'API',
         metadata: { annotations: { 'backstage.io/techdocs-ref': 'dir' } },
         spec: {
           owner: 'group:default/team-a',
           lifecycle: 'production',
-          type: 'service',
+          type: 'openapi',
         },
       };
       (global.fetch as jest.Mock).mockResolvedValue({
@@ -174,11 +178,9 @@ describe('bootstrap CLI script', () => {
       });
 
       const mockBlob = mockFileObj(
-        'default/component/my-service/search_index.json',
+        'default/api/my-service/search_index.json',
       ) as any;
-      const mockDestBlob = mockFileObj(
-        'default-component-my-service.ndjson',
-      ) as any;
+      const mockDestBlob = mockFileObj('default-api-my-service.ndjson') as any;
       mockBucketObj.file.mockReturnValue(mockDestBlob);
 
       const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
@@ -187,7 +189,7 @@ describe('bootstrap CLI script', () => {
 
       // Verify staging bucket NDJSON file creation
       expect(mockBucketObj.file).toHaveBeenCalledWith(
-        'default-component-my-service.ndjson',
+        'default-api-my-service.ndjson',
       );
       expect(mockSave).toHaveBeenCalled();
 
@@ -201,11 +203,12 @@ describe('bootstrap CLI script', () => {
 
       const firstData = JSON.parse(firstEntry.jsonData);
       expect(firstData.title).toBe('Doc 1');
+      expect(firstData.kind).toBe('API');
       expect(firstData.owner).toBe('group:default/team-a');
       expect(firstData.lifecycle).toBe('production');
-      expect(firstData.componentType).toBe('service');
+      expect(firstData.componentType).toBe('openapi');
       expect(firstData.authorization.resourceRef).toBe(
-        'component:default/my-service',
+        'api:default/my-service',
       );
 
       logSpy.mockRestore();
@@ -302,8 +305,45 @@ describe('bootstrap CLI script', () => {
       expect(secondCallArgs.gcsSource.inputUris[0]).toBe(
         'gs://staging-bucket/file-101.ndjson',
       );
+      expect(mockClose).toHaveBeenCalledTimes(1);
 
       logSpy.mockRestore();
+    });
+
+    it('should surface metadata.failureCount > 0 as chunk errors, log errorSamples, and still close DocumentServiceClient', async () => {
+      mockGetFiles.mockResolvedValue([[mockFileObj('file-1.ndjson')]]);
+
+      const mockOperation = {
+        name: 'import-op-failed',
+        promise: jest
+          .fn()
+          .mockResolvedValue([
+            { errorSamples: [{ code: 3, message: 'Malformed NDJSON line' }] },
+            { failureCount: 4 },
+          ]),
+      };
+      mockImportDocuments.mockResolvedValue([mockOperation]);
+
+      const logSpy = jest.spyOn(console, 'log').mockImplementation(() => {});
+      const errSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+
+      await importDocs({
+        projectId: 'my-project',
+        location: 'europe-west4',
+        datastoreId: 'techdocs-ds',
+        stagingBucket: 'staging-bucket',
+      });
+
+      expect(errSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Malformed NDJSON line'),
+      );
+      expect(logSpy).toHaveBeenCalledWith(
+        expect.stringContaining('1 errors encountered.'),
+      );
+      expect(mockClose).toHaveBeenCalledTimes(1);
+
+      logSpy.mockRestore();
+      errSpy.mockRestore();
     });
   });
 });

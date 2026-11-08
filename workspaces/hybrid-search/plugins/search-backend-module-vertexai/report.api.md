@@ -55,6 +55,8 @@ export interface VertexAIEngineOptions {
 export interface VertexAIIndexingOptions {
   batchSize?: number;
   enabled?: boolean;
+  initialRetryDelayMs?: number;
+  maxRetries?: number;
   throttleMs?: number;
 }
 
@@ -70,12 +72,17 @@ export class VertexAISearchEngine implements SearchEngine {
 export interface VertexAITypeConfig {
   datastore: VertexAIDataStoreConfig;
   engine?: VertexAIEngineConfig;
-  indexing?: VertexAIIndexingOptions;
+  indexing?: VertexAITypeIndexingOptions;
   searchOptions?: Omit<
     protos.google.cloud.discoveryengine.v1.ISearchRequest,
     'servingConfig' | 'query'
   > &
     Record<string, any>;
+}
+
+// @public
+export interface VertexAITypeIndexingOptions {
+  enabled?: boolean;
 }
 
 // (No @packageDocumentation comment for this package)

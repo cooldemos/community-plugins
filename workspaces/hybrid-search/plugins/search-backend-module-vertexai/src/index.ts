@@ -20,6 +20,7 @@ export type {
   VertexAIEngineOptions,
   VertexAIEngineBlendedSearchConfig,
   VertexAIIndexingOptions,
+  VertexAITypeIndexingOptions,
   VertexAITypeConfig,
   VertexAIDataStoreConfig,
   VertexAIEngineConfig,

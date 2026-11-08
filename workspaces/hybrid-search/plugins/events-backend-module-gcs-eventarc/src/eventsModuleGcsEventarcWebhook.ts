@@ -138,7 +138,8 @@ function createOidcMiddleware(
 }
 
 /**
- * Transforms raw GCS TechDocs search documents into enriched Vertex AI Search JSON payloads.
+ * Transforms raw GCS TechDocs search documents into enriched Vertex AI Search JSON payloads,
+ * preserving canonical entity `kind` casing while keeping `docId` and `authorization.resourceRef` deterministic.
  */
 function mapSearchDocuments(
   docs: Array<{ title: string; text: string; location: string }>,
@@ -147,6 +148,7 @@ function mapSearchDocuments(
   name: string,
   entity?: any,
 ): Array<{ id: string; jsonData: string }> {
+  const canonicalKind = entity?.kind || kind;
   return docs
     .filter(doc => doc.title && doc.text && doc.location)
     .map(doc => {
@@ -156,7 +158,7 @@ function mapSearchDocuments(
         title: doc.title,
         name,
         namespace,
-        kind,
+        kind: canonicalKind,
         location: doc.location,
         text: doc.text,
         path: doc.location,
@@ -477,11 +479,30 @@ export const eventsModuleGcsEventarcWebhook = createBackendModule({
                   },
                 );
 
-                // D. Await all LROs concurrently (Google Cloud indexes them in parallel on their distributed servers!)
+                // D. Await all LROs concurrently and abort before delta deletions if any document failed ingestion
                 logger.info(
                   `Waiting for all ${operations.length} import operations to complete in parallel...`,
                 );
-                await Promise.all(operations.map(op => (op as any).promise()));
+                const opResults = await Promise.all(
+                  operations.map(op => (op as any).promise()),
+                );
+                for (const opResult of opResults) {
+                  const [response, metadata] = Array.isArray(opResult)
+                    ? opResult
+                    : [opResult, undefined];
+                  const failedDocs = Number(metadata?.failureCount ?? 0);
+                  if (failedDocs > 0) {
+                    const errorSamples = response?.errorSamples ?? [];
+                    logger.error(
+                      `GCS Eventarc Webhook: importDocuments reported ${failedDocs} failed document(s) in dataStore "${dataStoreId}". Error samples: ${JSON.stringify(
+                        errorSamples,
+                      )}`,
+                    );
+                    throw new Error(
+                      `Vertex AI Search importDocuments failed for ${failedDocs} document(s) in dataStore "${dataStoreId}"`,
+                    );
+                  }
+                }
                 logger.info(`Bulk document ingestion completed.`);
 
                 // E. Delta-reconciliation: compare with previous generation and delete stale documents

@@ -23,6 +23,10 @@ import { Storage } from '@google-cloud/storage';
 import { DocumentServiceClient } from '@google-cloud/discoveryengine';
 import crypto from 'crypto';
 
+/**
+ * Sweeps orphaned TechDocs prefixes from GCS and purges their corresponding documents from Vertex AI Search
+ * when catalog entities have been removed and external TechDocs ingestion is active.
+ */
 export async function runCatalogCleanupSweeper(options: {
   config: RootConfigService;
   logger: LoggerService;
@@ -102,67 +106,77 @@ export async function runCatalogCleanupSweeper(options: {
       } orphaned folders to purge: ${Array.from(orphanPrefixes).join(', ')}`,
     );
 
-    // 3. For each orphaned prefix, perform GDE & GCS cleanup
-    for (const prefix of orphanPrefixes) {
-      const parts = prefix.split('/');
-      const entityNamespace = parts[0];
-      const kind = parts[1];
-      const name = parts[2];
+    // 3. Initialize one reusable Discovery Engine client for the sweep and close it in finally
+    let docClient: DocumentServiceClient | undefined;
+    let parent: string | undefined;
+    try {
+      const techdocsConfig = config.getConfig(
+        'search.engines.vertexai.types.techdocs.datastore',
+      );
+      const location = techdocsConfig.getString('location');
+      const projectId = techdocsConfig.getString('projectId');
+      const dataStoreId = techdocsConfig.getString('datastoreId');
 
-      logger.info(`TechDocs Orphan Sweeper: purging orphan ${prefix}...`);
+      const apiEndpoint =
+        location !== 'global'
+          ? `${location}-discoveryengine.googleapis.com`
+          : undefined;
 
-      // A. Try to read the orphaned component's search/search_index.json to delete documents in GDE
-      const gcsIndexPath = `${prefix}/search/search_index.json`;
-      let docs: Array<{
-        title: string;
-        text: string;
-        location: string;
-      }> = [];
+      docClient = new DocumentServiceClient({ apiEndpoint });
+      parent = docClient.projectLocationCollectionDataStoreBranchPath(
+        projectId,
+        location,
+        'default_collection',
+        dataStoreId,
+        'default_branch',
+      );
+    } catch (vertexError) {
+      logger.error(
+        `TechDocs Orphan Sweeper: GDE client error during document purges:`,
+        vertexError as Error,
+      );
+    }
 
-      try {
-        const file = storage.bucket(bucketName!).file(gcsIndexPath);
-        const [fileContent] = await file.download();
-        const searchIndex = JSON.parse(fileContent.toString('utf-8')) as {
-          docs: Array<{
-            title: string;
-            text: string;
-            location: string;
-          }>;
-        };
-        docs = searchIndex.docs || [];
-        logger.info(
-          `TechDocs Orphan Sweeper: found ${docs.length} pages in index for orphan ${prefix}.`,
-        );
-      } catch (readError) {
-        logger.warn(
-          `TechDocs Orphan Sweeper: search_index.json not found or unreadable for orphan ${prefix}. Skipping GDE document purges.`,
-        );
-      }
+    // 4. For each orphaned prefix, perform GDE & GCS cleanup
+    try {
+      for (const prefix of orphanPrefixes) {
+        const parts = prefix.split('/');
+        const entityNamespace = parts[0];
+        const kind = parts[1];
+        const name = parts[2];
 
-      // B. Delete GDE indexed documents
-      if (docs.length > 0) {
+        logger.info(`TechDocs Orphan Sweeper: purging orphan ${prefix}...`);
+
+        // A. Try to read the orphaned component's search/search_index.json to delete documents in GDE
+        const gcsIndexPath = `${prefix}/search/search_index.json`;
+        let docs: Array<{
+          title: string;
+          text: string;
+          location: string;
+        }> = [];
+
         try {
-          const techdocsConfig = config.getConfig(
-            'search.engines.vertexai.types.techdocs.datastore',
+          const file = storage.bucket(bucketName!).file(gcsIndexPath);
+          const [fileContent] = await file.download();
+          const searchIndex = JSON.parse(fileContent.toString('utf-8')) as {
+            docs: Array<{
+              title: string;
+              text: string;
+              location: string;
+            }>;
+          };
+          docs = searchIndex.docs || [];
+          logger.info(
+            `TechDocs Orphan Sweeper: found ${docs.length} pages in index for orphan ${prefix}.`,
           );
-          const location = techdocsConfig.getString('location');
-          const projectId = techdocsConfig.getString('projectId');
-          const dataStoreId = techdocsConfig.getString('datastoreId');
-
-          const apiEndpoint =
-            location !== 'global'
-              ? `${location}-discoveryengine.googleapis.com`
-              : undefined;
-
-          const docClient = new DocumentServiceClient({ apiEndpoint });
-          const parent = docClient.projectLocationCollectionDataStoreBranchPath(
-            projectId,
-            location,
-            'default_collection',
-            dataStoreId,
-            'default_branch',
+        } catch (readError) {
+          logger.warn(
+            `TechDocs Orphan Sweeper: search_index.json not found or unreadable for orphan ${prefix}. Skipping GDE document purges.`,
           );
+        }
 
+        // B. Delete GDE indexed documents when client initialized cleanly
+        if (docs.length > 0 && docClient && parent) {
           for (const doc of docs) {
             if (doc.location) {
               const cleanLocation = doc.location.startsWith('/')
@@ -188,30 +202,27 @@ export async function runCatalogCleanupSweeper(options: {
               }
             }
           }
-        } catch (vertexError) {
+        }
+
+        // C. WIPE STATIC FILES FROM GCS BUCKET
+        try {
+          const gcsPrefix = `${prefix}/`;
+          logger.info(
+            `TechDocs Orphan Sweeper: deleting GCS bucket files under: ${gcsPrefix}`,
+          );
+          await storage.bucket(bucketName!).deleteFiles({ prefix: gcsPrefix });
+          logger.info(
+            `TechDocs Orphan Sweeper: successfully deleted all GCS files for orphan ${prefix}.`,
+          );
+        } catch (gcsPurgeError) {
           logger.error(
-            `TechDocs Orphan Sweeper: GDE client error during document purges:`,
-            vertexError as Error,
+            `TechDocs Orphan Sweeper: failed to clean GCS files for orphan ${prefix}:`,
+            gcsPurgeError as Error,
           );
         }
       }
-
-      // C. WIPE STATIC FILES FROM GCS BUCKET
-      try {
-        const gcsPrefix = `${prefix}/`;
-        logger.info(
-          `TechDocs Orphan Sweeper: deleting GCS bucket files under: ${gcsPrefix}`,
-        );
-        await storage.bucket(bucketName!).deleteFiles({ prefix: gcsPrefix });
-        logger.info(
-          `TechDocs Orphan Sweeper: successfully deleted all GCS files for orphan ${prefix}.`,
-        );
-      } catch (gcsPurgeError) {
-        logger.error(
-          `TechDocs Orphan Sweeper: failed to clean GCS files for orphan ${prefix}:`,
-          gcsPurgeError as Error,
-        );
-      }
+    } finally {
+      await docClient?.close();
     }
 
     logger.info('TechDocs Orphan Sweeper: sweep cycle completed.');

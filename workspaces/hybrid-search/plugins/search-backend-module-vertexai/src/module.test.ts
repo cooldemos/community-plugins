@@ -23,6 +23,11 @@ import { searchModuleVertexAISearch } from './module';
 import { searchModuleVertexAISearchHybrid } from './hybrid';
 import { VertexAISearchEngine } from './VertexAISearchEngine';
 
+const mockImportDocuments = jest.fn();
+const mockListDocuments = jest.fn();
+const mockDeleteDocument = jest.fn();
+const mockClose = jest.fn();
+
 // Mock Google Cloud Discovery Engine
 jest.mock('@google-cloud/discoveryengine', () => {
   return {
@@ -36,7 +41,10 @@ jest.mock('@google-cloud/discoveryengine', () => {
         projectLocationCollectionDataStoreBranchPath: jest
           .fn()
           .mockReturnValue('mock-path'),
-        importDocuments: jest.fn(),
+        importDocuments: mockImportDocuments,
+        listDocuments: mockListDocuments,
+        deleteDocument: mockDeleteDocument,
+        close: mockClose,
       };
     }),
   };
@@ -76,6 +84,16 @@ describe('search-backend-module-vertexai modules', () => {
     let schedulerMockService: any;
 
     beforeEach(() => {
+      jest.clearAllMocks();
+      mockListDocuments.mockResolvedValue([[], null, {}]);
+      mockDeleteDocument.mockResolvedValue([{}]);
+      mockClose.mockResolvedValue(undefined);
+      mockImportDocuments.mockResolvedValue([
+        {
+          name: 'op-1',
+          promise: jest.fn().mockResolvedValue([{}, { failureCount: 0 }]),
+        },
+      ]);
       schedulerMock = {
         scheduleTask: jest.fn(),
       };
@@ -215,6 +233,76 @@ describe('search-backend-module-vertexai modules', () => {
       });
 
       expect(schedulerMock.scheduleTask).not.toHaveBeenCalled();
+    });
+
+    it('should wire engine-level indexing options from config into VertexAISearchEngine', async () => {
+      const searchEngineRegistryMock = {
+        setSearchEngine: jest.fn(),
+      };
+
+      const indexingConfig = {
+        search: {
+          engines: {
+            vertexai: {
+              ...baseConfigData.search.engines.vertexai,
+              indexing: {
+                enabled: true,
+                batchSize: 2,
+                throttleMs: 0,
+                maxRetries: 1,
+                initialRetryDelayMs: 5,
+              },
+            },
+          },
+        },
+      };
+
+      await startTestBackend({
+        extensionPoints: [
+          [searchEngineRegistryExtensionPoint, searchEngineRegistryMock],
+        ],
+        features: [
+          searchModuleVertexAISearch,
+          mockCatalogFactory,
+          schedulerMockService.factory,
+          mockServices.rootConfig.factory({
+            data: indexingConfig,
+          }),
+        ],
+      });
+
+      const registeredEngine: VertexAISearchEngine =
+        searchEngineRegistryMock.setSearchEngine.mock.calls[0][0];
+      const stream = await registeredEngine.getIndexer('techdocs');
+      expect(stream.constructor.name).toBe('VertexAISearchEngineIndexer');
+
+      const closePromise = new Promise<void>(resolve =>
+        stream.once('close', resolve),
+      );
+
+      // Write 1 document (below batchSize: 2 -> not flushed yet)
+      await new Promise<void>((resolve, reject) => {
+        stream.write(
+          { title: 'Doc 1', text: 'Body 1', location: '/docs/1' },
+          err => (err ? reject(err) : resolve()),
+        );
+      });
+      expect(mockImportDocuments).not.toHaveBeenCalled();
+
+      // Write 2nd document (reaches batchSize: 2 -> flushes immediately)
+      await new Promise<void>((resolve, reject) => {
+        stream.write(
+          { title: 'Doc 2', text: 'Body 2', location: '/docs/2' },
+          err => (err ? reject(err) : resolve()),
+        );
+      });
+      expect(mockImportDocuments).toHaveBeenCalledTimes(1);
+
+      await new Promise<void>((resolve, reject) => {
+        stream.end((err: any) => (err ? reject(err) : resolve()));
+      });
+      await closePromise;
+      expect(mockClose).toHaveBeenCalledTimes(1);
     });
   });
 

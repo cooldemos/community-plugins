@@ -58,6 +58,14 @@ export interface Config {
            * Optional delay in milliseconds between batch uploads to throttle the ingestion rate.
            */
           throttleMs?: number;
+          /**
+           * Optional maximum retry attempts on transient gRPC errors (codes 4, 8, 14). Defaults to 3.
+           */
+          maxRetries?: number;
+          /**
+           * Optional initial backoff delay in milliseconds before retrying transient gRPC errors. Defaults to 500.
+           */
+          initialRetryDelayMs?: number;
         };
         cleanup?: {
           /**
@@ -69,6 +77,13 @@ export interface Config {
            */
           frequency?: {
             hours?: number;
+            minutes?: number;
+            seconds?: number;
+          };
+          /**
+           * Initial startup delay before running the first cleanup sweep.
+           */
+          initialDelay?: {
             minutes?: number;
             seconds?: number;
           };
@@ -112,14 +127,6 @@ export interface Config {
                * Enable or disable direct local indexing for this type.
                */
               enabled?: boolean;
-              /**
-               * Optional batch size for inline document uploads. Recommended maximum: 100.
-               */
-              batchSize?: number;
-              /**
-               * Optional delay in milliseconds between batch uploads to throttle the ingestion rate.
-               */
-              throttleMs?: number;
             };
           };
         };

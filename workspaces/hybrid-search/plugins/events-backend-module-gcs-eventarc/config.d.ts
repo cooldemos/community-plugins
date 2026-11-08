@@ -44,9 +44,36 @@ export interface Config {
   search?: {
     engines?: {
       vertexai?: {
-        projectId: string;
-        location: string;
-        dataStoreId: string;
+        indexing?: {
+          /**
+           * Global local indexing toggle read to detect conflicts with Eventarc ingestion.
+           */
+          enabled?: boolean;
+        };
+        types?: {
+          techdocs?: {
+            indexing?: {
+              /**
+               * Per-type local indexing toggle for TechDocs. Must be false or omitted when Eventarc ingestion is active.
+               */
+              enabled?: boolean;
+            };
+            datastore: {
+              /**
+               * The Google Cloud Project ID where the TechDocs data store is located.
+               */
+              projectId: string;
+              /**
+               * The target TechDocs Data Store ID.
+               */
+              datastoreId: string;
+              /**
+               * The geographic location/region of the TechDocs data store (e.g. 'global', 'europe-west4').
+               */
+              location: string;
+            };
+          };
+        };
       };
     };
   };

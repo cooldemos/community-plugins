@@ -6,7 +6,9 @@
 import { BackendFeature } from '@backstage/backend-plugin-api';
 
 // @public
-export const searchModuleVertexAISearchHybrid: BackendFeature;
+const searchModuleVertexAISearchHybrid: BackendFeature;
+export default searchModuleVertexAISearchHybrid;
+export { searchModuleVertexAISearchHybrid };
 
 // (No @packageDocumentation comment for this package)
 ```

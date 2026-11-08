@@ -113,8 +113,9 @@ export async function processEntity(
   const kind = pathParts[1];
   const name = pathParts[2];
 
-  // Fetch parent Catalog Entity dynamically to enrich search documents with metadata
+  // Fetch parent Catalog Entity dynamically to enrich search documents with metadata and canonical kind casing
   const entity = await fetchCatalogEntity(backstageUrl, kind, namespace, name);
+  const canonicalKind = entity?.kind || kind;
 
   const docs = await getEntityDocuments(blob);
   console.log(
@@ -132,14 +133,15 @@ export async function processEntity(
       continue;
     }
 
+    const docId = generateId(`${namespace}_${kind}_${name}_${location}`);
     const structuredEntry = {
-      id: generateId(`${namespace}_${kind}_${name}_${location}`),
+      id: docId,
       jsonData: JSON.stringify({
-        id: generateId(`${namespace}_${kind}_${name}_${location}`),
+        id: docId,
         title,
         name,
         namespace,
-        kind,
+        kind: canonicalKind,
         location,
         text,
         path: location,
@@ -234,7 +236,24 @@ async function importDocsFromGcs(
     } as any);
 
     console.log(`Spawned import operation: ${operation.name}. Waiting...`);
-    const [response] = await (operation as any).promise();
+    const opResult = await (operation as any).promise();
+    const [response, metadata] = Array.isArray(opResult)
+      ? opResult
+      : [opResult, undefined];
+    const failedDocs = Number(metadata?.failureCount ?? 0);
+    if (failedDocs > 0) {
+      const errorSamples = response?.errorSamples ?? [];
+      console.error(
+        `Import operation ${
+          operation.name
+        } reported ${failedDocs} failed document(s). Error samples: ${JSON.stringify(
+          errorSamples,
+        )}`,
+      );
+      throw new Error(
+        `Vertex AI Search import operation ${operation.name} failed for ${failedDocs} document(s)`,
+      );
+    }
     console.log(`Operation ${operation.name} completed successfully.`);
     console.log(JSON.stringify(response, null, 2));
   } catch (error) {
@@ -269,37 +288,41 @@ export async function importDocs(options: {
       : undefined;
 
   const client = new DocumentServiceClient({ apiEndpoint });
-  const parent = client.projectLocationCollectionDataStoreBranchPath(
-    options.projectId,
-    options.location,
-    'default_collection',
-    options.datastoreId,
-    'default_branch',
-  );
+  try {
+    const parent = client.projectLocationCollectionDataStoreBranchPath(
+      options.projectId,
+      options.location,
+      'default_collection',
+      options.datastoreId,
+      'default_branch',
+    );
 
-  // Chunk the GCS URIs in groups of MAX_FILES_TO_IMPORT (100)
-  const chunks: string[][] = [];
-  for (let i = 0; i < ndjsonFiles.length; i += MAX_FILES_TO_IMPORT) {
-    const slice = ndjsonFiles.slice(i, i + MAX_FILES_TO_IMPORT);
-    chunks.push(slice.map(f => `gs://${options.stagingBucket}/${f.name}`));
-  }
-
-  const totalCount = chunks.length;
-  console.log(`Split ingestion into ${totalCount} batch import operations.`);
-
-  let failureCount = 0;
-
-  await asyncPool(CONCURRENCY_LIMIT, chunks, async chunk => {
-    try {
-      await importDocsFromGcs(client, parent, chunk);
-    } catch (err) {
-      failureCount++;
+    // Chunk the GCS URIs in groups of MAX_FILES_TO_IMPORT (100)
+    const chunks: string[][] = [];
+    for (let i = 0; i < ndjsonFiles.length; i += MAX_FILES_TO_IMPORT) {
+      const slice = ndjsonFiles.slice(i, i + MAX_FILES_TO_IMPORT);
+      chunks.push(slice.map(f => `gs://${options.stagingBucket}/${f.name}`));
     }
-  });
 
-  console.log(
-    `\nImport complete: ${totalCount} operations executed. ${failureCount} errors encountered.`,
-  );
+    const totalCount = chunks.length;
+    console.log(`Split ingestion into ${totalCount} batch import operations.`);
+
+    let failureCount = 0;
+
+    await asyncPool(CONCURRENCY_LIMIT, chunks, async chunk => {
+      try {
+        await importDocsFromGcs(client, parent, chunk);
+      } catch (err) {
+        failureCount++;
+      }
+    });
+
+    console.log(
+      `\nImport complete: ${totalCount} operations executed. ${failureCount} errors encountered.`,
+    );
+  } finally {
+    await client.close();
+  }
 }
 
 /**
