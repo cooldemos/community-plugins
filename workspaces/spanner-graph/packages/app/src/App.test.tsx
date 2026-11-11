@@ -17,6 +17,12 @@ import { render, waitFor } from '@testing-library/react';
 import App from './App';
 
 describe('App', () => {
+  const originalEnv = process.env;
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
   it('should render', async () => {
     process.env = {
       NODE_ENV: 'test',

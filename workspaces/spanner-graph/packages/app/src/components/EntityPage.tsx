@@ -30,7 +30,7 @@ import {
   isComponentType,
   isKind,
 } from '@backstage/plugin-catalog';
-import { SpannerCatalogGraphCard } from '@backstage-community/plugin-spanner-graph';
+import { EntitySpannerGraphCard } from '@backstage-community/plugin-spanner-graph';
 
 const overviewContent = (
   <Grid container spacing={3} alignItems="stretch">
@@ -38,7 +38,7 @@ const overviewContent = (
       <EntityAboutCard />
     </Grid>
     <Grid item md={6} xs={12}>
-      <SpannerCatalogGraphCard
+      <EntitySpannerGraphCard
         variant="gridItem"
         maxDepth={2}
         direction="both"
@@ -54,7 +54,7 @@ const overviewContent = (
 const blastRadiusTab = (
   <Grid container spacing={3} alignItems="stretch">
     <Grid item xs={12}>
-      <SpannerCatalogGraphCard
+      <EntitySpannerGraphCard
         variant="gridItem"
         maxDepth={4}
         direction="incoming"
@@ -128,7 +128,7 @@ const systemPage = (
           <EntityAboutCard />
         </Grid>
         <Grid item md={6} xs={12}>
-          <SpannerCatalogGraphCard height={400} />
+          <EntitySpannerGraphCard height={400} />
         </Grid>
         <Grid item md={4} xs={12}>
           <EntityLinksCard />
@@ -155,7 +155,7 @@ const domainPage = (
           <EntityHasSystemsCard variant="gridItem" />
         </Grid>
         <Grid item xs={12}>
-          <SpannerCatalogGraphCard height={400} maxDepth={3} />
+          <EntitySpannerGraphCard height={400} maxDepth={3} />
         </Grid>
       </Grid>
     </EntityLayout.Route>
@@ -163,7 +163,7 @@ const domainPage = (
 );
 
 /**
- * Default catalog entity page layout mounting `SpannerCatalogGraphCard` on Overview and Blast Radius tabs.
+ * Default catalog entity page layout mounting `EntitySpannerGraphCard` on Overview and Blast Radius tabs.
  */
 export const entityPage = (
   <EntitySwitch>

@@ -29,8 +29,9 @@ import {
 import { createApp } from '@backstage/app-defaults';
 import { AppRouter, FlatRoutes } from '@backstage/core-app-api';
 import {
-  SpannerGraphPage,
+  SpannerGraphExplorerPage,
   SpannerNaturalQueryCard,
+  spannerGraphPlugin,
 } from '@backstage-community/plugin-spanner-graph';
 import { apis } from './apis';
 import { entityPage } from './components/EntityPage';
@@ -39,6 +40,7 @@ import { Root } from './components/Root';
 
 const app = createApp({
   apis,
+  plugins: [spannerGraphPlugin],
   bindRoutes({ bind }) {
     bind(catalogPlugin.externalRoutes, {});
   },
@@ -60,9 +62,9 @@ const routes = (
     <Route
       path="/spanner-graph"
       element={
-        <SpannerGraphPage>
+        <SpannerGraphExplorerPage>
           <SpannerNaturalQueryCard />
-        </SpannerGraphPage>
+        </SpannerGraphExplorerPage>
       }
     />
     <Route path="/search" element={<SearchPage />}>

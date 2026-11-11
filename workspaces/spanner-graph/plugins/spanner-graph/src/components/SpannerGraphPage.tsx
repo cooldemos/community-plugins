@@ -140,14 +140,20 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
   const depthFromQuery = Number(
     searchParams.get('maxDepth') ?? initialMaxDepth,
   );
-  const directionFromQuery =
-    (searchParams.get('direction') as GraphDirection | null) ??
-    initialDirection;
+  const rawDirection = searchParams.get('direction');
+  const directionFromQuery: GraphDirection =
+    rawDirection === 'outgoing' ||
+    rawDirection === 'incoming' ||
+    rawDirection === 'both'
+      ? rawDirection
+      : initialDirection;
 
   const [rootInput, setRootInput] = useState<string>(rootFromQuery);
   const [activeRoot, setActiveRoot] = useState<string>(rootFromQuery);
   const [maxDepth, setMaxDepth] = useState<number>(
-    Number.isInteger(depthFromQuery) && depthFromQuery >= 1
+    Number.isInteger(depthFromQuery) &&
+      depthFromQuery >= 1 &&
+      depthFromQuery <= 5
       ? depthFromQuery
       : initialMaxDepth,
   );

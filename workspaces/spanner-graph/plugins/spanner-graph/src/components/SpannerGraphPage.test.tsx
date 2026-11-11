@@ -99,4 +99,38 @@ describe('SpannerGraphPage and SpannerNaturalQueryCard', () => {
       await screen.findByText('resource:default/orders-spanner-db'),
     ).toBeInTheDocument();
   });
+
+  it('falls back to initialMaxDepth and initialDirection when URL query parameters are out of range or invalid', async () => {
+    const getSubgraph = jest.fn().mockResolvedValue({
+      rootEntityRef: 'component:default/checkout-service',
+      depth: 3,
+      nodes: [],
+      edges: [],
+      truncated: false,
+      queryDurationMs: 5,
+    });
+
+    const mockApi: SpannerGraphApi = {
+      getSubgraph,
+      askNaturalLanguage: jest.fn(),
+    };
+
+    await renderInTestApp(
+      <TestApiProvider apis={[[spannerGraphApiRef, mockApi]]}>
+        <SpannerGraphPage initialMaxDepth={3} initialDirection="both" />
+      </TestApiProvider>,
+      {
+        routeEntries: ['/spanner-graph?maxDepth=99&direction=invalid'],
+      },
+    );
+
+    await waitFor(() =>
+      expect(getSubgraph).toHaveBeenCalledWith(
+        expect.objectContaining({
+          maxDepth: 3,
+          direction: 'both',
+        }),
+      ),
+    );
+  });
 });
