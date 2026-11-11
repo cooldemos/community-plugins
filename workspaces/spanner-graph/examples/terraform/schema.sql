@@ -13,8 +13,8 @@
 -- limitations under the License.
 
 CREATE TABLE entities (
-  entity_id STRING(MAX) NOT NULL,
   entity_ref STRING(MAX) NOT NULL,
+  entity_id STRING(MAX) NOT NULL,
   api_version STRING(128) NOT NULL,
   kind STRING(64) NOT NULL,
   namespace STRING(128) NOT NULL,
@@ -30,20 +30,21 @@ CREATE TABLE entities (
   description_embedding ARRAY<FLOAT32>(vector_length=>768),
   updated_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
   sync_run_id STRING(64) NOT NULL
-) PRIMARY KEY(entity_id);
+) PRIMARY KEY (entity_ref);
 
-CREATE INDEX idx_entities_ref ON entities(entity_ref);
+CREATE INDEX idx_entities_id ON entities(entity_id);
 
 CREATE INDEX idx_entities_kind_ns ON entities(kind, namespace);
 
 CREATE TABLE relations (
-  entity_id STRING(MAX) NOT NULL,
-  target_entity_ref STRING(MAX) NOT NULL,
+  entity_ref STRING(MAX) NOT NULL,
   relation_type STRING(128) NOT NULL,
+  target_entity_ref STRING(MAX) NOT NULL,
+  originating_entity_id STRING(MAX) NOT NULL,
   source_entity_ref STRING(MAX) NOT NULL,
   updated_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
   sync_run_id STRING(64) NOT NULL
-) PRIMARY KEY(entity_id, relation_type, target_entity_ref),
+) PRIMARY KEY (entity_ref, relation_type, target_entity_ref, originating_entity_id),
   INTERLEAVE IN PARENT entities ON DELETE CASCADE;
 
 CREATE INDEX relations_by_target ON relations(target_entity_ref, relation_type) STORING (source_entity_ref);
@@ -51,7 +52,7 @@ CREATE INDEX relations_by_target ON relations(target_entity_ref, relation_type) 
 CREATE OR REPLACE PROPERTY GRAPH BackstageCatalogGraph
   NODE TABLES (
     entities
-      KEY (entity_id)
+      KEY (entity_ref)
       LABEL Entity
       PROPERTIES (
         entity_id,
@@ -68,13 +69,15 @@ CREATE OR REPLACE PROPERTY GRAPH BackstageCatalogGraph
   )
   EDGE TABLES (
     relations
-      KEY (entity_id, relation_type, target_entity_ref)
-      SOURCE KEY (entity_id) REFERENCES entities (entity_id)
+      KEY (entity_ref, relation_type, target_entity_ref, originating_entity_id)
+      SOURCE KEY (entity_ref) REFERENCES entities (entity_ref)
       DESTINATION KEY (target_entity_ref) REFERENCES entities (entity_ref)
       LABEL Relation
       PROPERTIES (
+        entity_ref,
         relation_type,
         source_entity_ref,
-        target_entity_ref
+        target_entity_ref,
+        originating_entity_id
       )
   );

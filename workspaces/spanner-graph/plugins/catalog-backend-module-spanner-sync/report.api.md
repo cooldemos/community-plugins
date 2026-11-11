@@ -58,7 +58,9 @@ export interface SpannerEntityRow {
 // @public
 export interface SpannerRelationRow {
   // (undocumented)
-  entity_id: string;
+  entity_ref: string;
+  // (undocumented)
+  originating_entity_id: string;
   // (undocumented)
   relation_type: string;
   // (undocumented)

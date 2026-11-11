@@ -116,7 +116,9 @@ describe('SpannerGraphService', () => {
       },
     ]);
     expect(run).toHaveBeenCalledWith({
-      sql: expect.stringContaining('-[e:Relation]->{1,2}'),
+      sql: expect.stringContaining(
+        '(-[e:Relation WHERE e.relation_type IN UNNEST(@relationTypes)]->){1,2}',
+      ),
       params: {
         rootRef: 'component:default/checkout-service',
         maxPaths: 500,

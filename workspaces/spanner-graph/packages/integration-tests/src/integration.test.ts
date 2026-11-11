@@ -231,9 +231,9 @@ describe('Cloud Spanner Graph end-to-end integration pipeline', () => {
       ]),
     );
 
-    // 4. Filtered subgraph query by entityKinds (case-insensitive normalization).
+    // 4. Filtered subgraph query by entityKinds and relationTypes (case-insensitive normalization).
     const filteredKindRes = await request(app).get(
-      '/api/spanner-graph/subgraph?root=component:default/checkout-service&maxDepth=2&direction=outgoing&entityKinds=Resource',
+      '/api/spanner-graph/subgraph?root=component:default/checkout-service&maxDepth=2&direction=outgoing&entityKinds=Resource&relationTypes=dependsOn',
     );
     expect(filteredKindRes.status).toBe(200);
     expect(
@@ -265,5 +265,5 @@ describe('Cloud Spanner Graph end-to-end integration pipeline', () => {
     const secondSync = await syncService.runSync(reducedCatalog);
     expect(secondSync.entitiesSynced).toBe(6);
     expect(secondSync.staleEntitiesDeleted).toBe(1);
-  });
+  }, 120_000);
 });

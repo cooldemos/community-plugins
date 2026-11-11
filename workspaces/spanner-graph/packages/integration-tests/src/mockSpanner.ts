@@ -54,7 +54,7 @@ export class InMemorySpannerDatabase {
       return {
         upsert: async (rows: unknown[]) => {
           for (const raw of rows as SpannerEntityRow[]) {
-            this.entities.set(raw.entity_id, { ...raw });
+            this.entities.set(raw.entity_ref, { ...raw });
           }
         },
       };
@@ -63,7 +63,7 @@ export class InMemorySpannerDatabase {
       return {
         upsert: async (rows: unknown[]) => {
           for (const raw of rows as SpannerRelationRow[]) {
-            const key = `${raw.entity_id}::${raw.relation_type}::${raw.target_entity_ref}`;
+            const key = `${raw.entity_ref}::${raw.relation_type}::${raw.target_entity_ref}::${raw.originating_entity_id}`;
             this.relations.set(key, { ...raw });
           }
         },
@@ -106,13 +106,13 @@ export class InMemorySpannerDatabase {
 
         if (/DELETE\s+FROM\s+entities/i.test(sql)) {
           let deleted = 0;
-          for (const [entityId, entity] of this.entities.entries()) {
+          for (const [entityRef, entity] of this.entities.entries()) {
             if (entity.sync_run_id !== activeSyncRunId) {
-              this.entities.delete(entityId);
+              this.entities.delete(entityRef);
               deleted += 1;
               // Simulate INTERLEAVE IN PARENT entities ON DELETE CASCADE.
               for (const [relKey, rel] of this.relations.entries()) {
-                if (rel.entity_id === entityId) {
+                if (rel.entity_ref === entityRef) {
                   this.relations.delete(relKey);
                 }
               }
@@ -126,10 +126,12 @@ export class InMemorySpannerDatabase {
       update: (tableName: string, rows: unknown[]) => {
         if (tableName === 'entities') {
           for (const updateRow of rows as Array<{
-            entity_id: string;
+            entity_ref?: string;
+            entity_id?: string;
             description_embedding?: number[];
           }>) {
-            const existing = this.entities.get(updateRow.entity_id);
+            const key = updateRow.entity_ref ?? updateRow.entity_id ?? '';
+            const existing = this.entities.get(key);
             if (existing) {
               existing.description_embedding = updateRow.description_embedding;
             }
@@ -155,7 +157,7 @@ export class InMemorySpannerDatabase {
         if (!entity.description_embedding) {
           predicted.push(
             wrapRow({
-              entity_id: entity.entity_id,
+              entity_ref: entity.entity_ref,
               embedding: [0.25, 0.5, 0.75],
             }),
           );
@@ -172,7 +174,7 @@ export class InMemorySpannerDatabase {
       return [found ? [wrapRow({ ...found })] : []];
     }
 
-    if (/MATCH\s+TRAIL/i.test(sql)) {
+    if (/MATCH\s+(?:p\s*=\s*)?TRAIL/i.test(sql)) {
       return [this.evaluateGqlMatchTrail(sql, params)];
     }
 
@@ -201,9 +203,12 @@ export class InMemorySpannerDatabase {
     const maxDepth = depthMatch ? Number.parseInt(depthMatch[1], 10) : 2;
 
     let direction: 'outgoing' | 'incoming' | 'both' = 'both';
-    if (sql.includes('-[e:Relation]->')) {
+    if (/\]->\)\{1,/.test(sql) || sql.includes('-[e:Relation]->')) {
       direction = 'outgoing';
-    } else if (sql.includes('<-[e:Relation]-')) {
+    } else if (
+      /\(<-\[e:Relation/.test(sql) ||
+      sql.includes('<-[e:Relation]-')
+    ) {
       direction = 'incoming';
     }
 

@@ -4,7 +4,7 @@ A Backstage catalog backend module that synchronizes Backstage Software Catalog 
 
 ## Features
 
-- **Zero-Touch Schema Provisioning**: Automatically creates `entities`, interleaved `relations` (`ON DELETE CASCADE`), secondary indexes (`idx_entities_ref`, `idx_entities_kind_ns`, `relations_by_target`), and the `BackstageCatalogGraph` property graph when `autoCreateSchema` is enabled (the default).
+- **Zero-Touch Schema Provisioning**: Automatically creates `entities`, interleaved `relations` (`ON DELETE CASCADE`), secondary indexes (`idx_entities_id`, `idx_entities_kind_ns`, `relations_by_target`), and the `BackstageCatalogGraph` property graph when `autoCreateSchema` is enabled (the default).
 - **Idempotent Batch Upserts & Stale Reconciliation**: Normalizes entity references (`kind:namespace/name`), deduplicates composite relation keys, upserts entities and relations in configurable batches, and removes deleted entities and obsolete relations after each sync run.
 - **Opt-In Vertex AI Embeddings**: Optionally generates vector embeddings in-database via `ML.PREDICT` when `enableEmbeddings: true` is configured.
 

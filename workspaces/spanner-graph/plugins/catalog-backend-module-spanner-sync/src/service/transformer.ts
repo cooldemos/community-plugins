@@ -131,7 +131,7 @@ export function transformEntityRelationsToSpannerEdges(
     'en-US',
   );
   const sourceEntityRef = `${kind}:${namespace}/${entity.metadata.name}`;
-  const entityId = entity.metadata.uid ?? sourceEntityRef;
+  const originatingEntityId = entity.metadata.uid ?? sourceEntityRef;
 
   const seenCompositeKeys = new Set<string>();
   const edges: SpannerRelationRow[] = [];
@@ -143,17 +143,18 @@ export function transformEntityRelationsToSpannerEdges(
 
     const targetEntityRef = normalizeEntityRef(relation.targetRef);
     const relationType = relation.type.trim();
-    // Deduplicate by the Spanner `relations` composite primary key (entity_id, relation_type, target_entity_ref).
-    const compositeKey = `${entityId}::${relationType}::${targetEntityRef}`;
+    // Deduplicate by the Spanner `relations` composite primary key (entity_ref, relation_type, target_entity_ref, originating_entity_id).
+    const compositeKey = `${sourceEntityRef}::${relationType}::${targetEntityRef}::${originatingEntityId}`;
     if (seenCompositeKeys.has(compositeKey)) {
       continue;
     }
     seenCompositeKeys.add(compositeKey);
 
     edges.push({
-      entity_id: entityId,
-      target_entity_ref: targetEntityRef,
+      entity_ref: sourceEntityRef,
       relation_type: relationType,
+      target_entity_ref: targetEntityRef,
+      originating_entity_id: originatingEntityId,
       source_entity_ref: sourceEntityRef,
       updated_at: nowIso,
       sync_run_id: syncRunId,

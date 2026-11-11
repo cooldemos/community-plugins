@@ -179,7 +179,7 @@ describe('SpannerSyncService', () => {
       [
         {
           toJSON: () => ({
-            entity_id: 'uid-svc-1',
+            entity_ref: 'component:default/checkout-service',
             embedding: [0.12, 0.34, 0.56],
           }),
         },
@@ -224,7 +224,7 @@ describe('SpannerSyncService', () => {
     );
     expect(update).toHaveBeenCalledWith('entities', [
       {
-        entity_id: 'uid-svc-1',
+        entity_ref: 'component:default/checkout-service',
         description_embedding: [0.12, 0.34, 0.56],
       },
     ]);

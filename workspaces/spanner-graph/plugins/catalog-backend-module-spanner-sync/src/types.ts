@@ -72,9 +72,10 @@ export interface SpannerEntityRow {
  * @public
  */
 export interface SpannerRelationRow {
-  entity_id: string;
-  target_entity_ref: string;
+  entity_ref: string;
   relation_type: string;
+  target_entity_ref: string;
+  originating_entity_id: string;
   source_entity_ref: string;
   updated_at: string;
   sync_run_id: string;

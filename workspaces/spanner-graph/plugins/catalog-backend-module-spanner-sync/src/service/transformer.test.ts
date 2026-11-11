@@ -145,18 +145,20 @@ describe('transformer', () => {
 
     expect(edges).toEqual([
       {
-        entity_id: 'uid-checkout-1',
-        source_entity_ref: 'component:default/checkout-service',
-        target_entity_ref: 'resource:default/orders-spanner-db',
+        entity_ref: 'component:default/checkout-service',
         relation_type: 'dependsOn',
+        target_entity_ref: 'resource:default/orders-spanner-db',
+        originating_entity_id: 'uid-checkout-1',
+        source_entity_ref: 'component:default/checkout-service',
         updated_at: fixedNow,
         sync_run_id: 'sync-run-42',
       },
       {
-        entity_id: 'uid-checkout-1',
-        source_entity_ref: 'component:default/checkout-service',
-        target_entity_ref: 'api:default/payment-grpc-api',
+        entity_ref: 'component:default/checkout-service',
         relation_type: 'consumesApi',
+        target_entity_ref: 'api:default/payment-grpc-api',
+        originating_entity_id: 'uid-checkout-1',
+        source_entity_ref: 'component:default/checkout-service',
         updated_at: fixedNow,
         sync_run_id: 'sync-run-42',
       },

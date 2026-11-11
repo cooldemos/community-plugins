@@ -235,10 +235,12 @@ function parseGraphNode(props: Record<string, unknown>): GraphNode | undefined {
 
 /** Converts a raw Spanner edge property map into a GraphEdge if valid. */
 function parseGraphEdge(props: Record<string, unknown>): GraphEdge | undefined {
-  const from =
-    typeof props.source_entity_ref === 'string'
-      ? props.source_entity_ref
-      : undefined;
+  let from: string | undefined;
+  if (typeof props.source_entity_ref === 'string') {
+    from = props.source_entity_ref;
+  } else if (typeof props.entity_ref === 'string') {
+    from = props.entity_ref;
+  }
   const to =
     typeof props.target_entity_ref === 'string'
       ? props.target_entity_ref
@@ -336,13 +338,6 @@ export class SpannerGraphService {
     );
     const direction: GraphDirection = options.direction ?? 'both';
 
-    let edgePattern = `-[e:Relation]-{1,${depth}}`;
-    if (direction === 'outgoing') {
-      edgePattern = `-[e:Relation]->{1,${depth}}`;
-    } else if (direction === 'incoming') {
-      edgePattern = `<-[e:Relation]-{1,${depth}}`;
-    }
-
     const relationTypes = (options.relationTypes ?? [])
       .map(t => t.trim())
       .filter(Boolean);
@@ -350,18 +345,27 @@ export class SpannerGraphService {
       .map(k => k.trim().toLocaleLowerCase('en-US'))
       .filter(Boolean);
 
-    const whereClauses: string[] = [];
     const params: Record<string, unknown> = {
       rootRef,
       maxPaths: MAX_RETURNED_PATHS,
     };
 
+    const edgeFilter =
+      relationTypes.length > 0
+        ? ' WHERE e.relation_type IN UNNEST(@relationTypes)'
+        : '';
     if (relationTypes.length > 0) {
-      whereClauses.push(
-        'ALL_TRUE(rel IN e WHERE rel.relation_type IN UNNEST(@relationTypes))',
-      );
       params.relationTypes = relationTypes;
     }
+
+    let edgePattern = `(-[e:Relation${edgeFilter}]-){1,${depth}}`;
+    if (direction === 'outgoing') {
+      edgePattern = `(-[e:Relation${edgeFilter}]->){1,${depth}}`;
+    } else if (direction === 'incoming') {
+      edgePattern = `(<-[e:Relation${edgeFilter}]-){1,${depth}}`;
+    }
+
+    const whereClauses: string[] = [];
     if (entityKinds.length > 0) {
       whereClauses.push('target.kind IN UNNEST(@entityKinds)');
       params.entityKinds = entityKinds;
@@ -371,7 +375,7 @@ export class SpannerGraphService {
       whereClauses.length > 0 ? `\nWHERE ${whereClauses.join(' AND ')}` : '';
 
     const gql = `GRAPH ${graphName}
-MATCH TRAIL p = (start:Entity {entity_ref: @rootRef})${edgePattern}(target:Entity)${whereClause}
+MATCH p = TRAIL (start:Entity {entity_ref: @rootRef})${edgePattern}(target:Entity)${whereClause}
 RETURN SAFE_TO_JSON(p) AS path
 LIMIT @maxPaths`;
 

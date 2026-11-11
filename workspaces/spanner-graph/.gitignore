@@ -52,5 +52,6 @@ app-config.local.yaml
 
 # Terraform artifacts
 .terraform/
+.terraform.lock.hcl
 *.tfstate*
 *.tfvars

@@ -36,8 +36,8 @@ import {
  */
 export const SPANNER_GRAPH_DDL_STATEMENTS: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS entities (
-    entity_id STRING(MAX) NOT NULL,
     entity_ref STRING(MAX) NOT NULL,
+    entity_id STRING(MAX) NOT NULL,
     api_version STRING(128) NOT NULL,
     kind STRING(64) NOT NULL,
     namespace STRING(128) NOT NULL,
@@ -53,23 +53,24 @@ export const SPANNER_GRAPH_DDL_STATEMENTS: readonly string[] = [
     description_embedding ARRAY<FLOAT32>(vector_length=>768),
     updated_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
     sync_run_id STRING(64) NOT NULL
-  ) PRIMARY KEY(entity_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_entities_ref ON entities(entity_ref)`,
+  ) PRIMARY KEY (entity_ref)`,
+  `CREATE INDEX IF NOT EXISTS idx_entities_id ON entities(entity_id)`,
   `CREATE INDEX IF NOT EXISTS idx_entities_kind_ns ON entities(kind, namespace)`,
   `CREATE TABLE IF NOT EXISTS relations (
-    entity_id STRING(MAX) NOT NULL,
-    target_entity_ref STRING(MAX) NOT NULL,
+    entity_ref STRING(MAX) NOT NULL,
     relation_type STRING(128) NOT NULL,
+    target_entity_ref STRING(MAX) NOT NULL,
+    originating_entity_id STRING(MAX) NOT NULL,
     source_entity_ref STRING(MAX) NOT NULL,
     updated_at TIMESTAMP NOT NULL OPTIONS (allow_commit_timestamp=true),
     sync_run_id STRING(64) NOT NULL
-  ) PRIMARY KEY(entity_id, relation_type, target_entity_ref),
+  ) PRIMARY KEY (entity_ref, relation_type, target_entity_ref, originating_entity_id),
     INTERLEAVE IN PARENT entities ON DELETE CASCADE`,
   `CREATE INDEX IF NOT EXISTS relations_by_target ON relations(target_entity_ref, relation_type) STORING (source_entity_ref)`,
   `CREATE OR REPLACE PROPERTY GRAPH BackstageCatalogGraph
     NODE TABLES (
       entities
-        KEY (entity_id)
+        KEY (entity_ref)
         LABEL Entity
         PROPERTIES (
           entity_id,
@@ -86,14 +87,16 @@ export const SPANNER_GRAPH_DDL_STATEMENTS: readonly string[] = [
     )
     EDGE TABLES (
       relations
-        KEY (entity_id, relation_type, target_entity_ref)
-        SOURCE KEY (entity_id) REFERENCES entities (entity_id)
+        KEY (entity_ref, relation_type, target_entity_ref, originating_entity_id)
+        SOURCE KEY (entity_ref) REFERENCES entities (entity_ref)
         DESTINATION KEY (target_entity_ref) REFERENCES entities (entity_ref)
         LABEL Relation
         PROPERTIES (
+          entity_ref,
           relation_type,
           source_entity_ref,
-          target_entity_ref
+          target_entity_ref,
+          originating_entity_id
         )
     )`,
 ];
@@ -362,12 +365,12 @@ export class SpannerSyncService {
     const [rows] = await this.database.run({
       sql: `
         SELECT
-          entity_id,
+          entity_ref,
           embeddings.values AS embedding
         FROM ML.PREDICT(MODEL ${modelName},
           (
             SELECT
-              entity_id,
+              entity_ref,
               CONCAT(kind, ' ', name, ': ', IFNULL(description, '')) AS content
             FROM entities
             WHERE description_embedding IS NULL
@@ -385,10 +388,12 @@ export class SpannerSyncService {
       .map(row => rowToPlainObject(row))
       .filter(
         plain =>
-          typeof plain.entity_id === 'string' && Array.isArray(plain.embedding),
+          (typeof plain.entity_ref === 'string' ||
+            typeof plain.entity_id === 'string') &&
+          Array.isArray(plain.embedding),
       )
       .map(plain => ({
-        entity_id: plain.entity_id as string,
+        entity_ref: (plain.entity_ref ?? plain.entity_id) as string,
         description_embedding: plain.embedding as number[],
       }));
 
