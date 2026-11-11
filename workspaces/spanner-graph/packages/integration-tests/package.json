@@ -1,0 +1,33 @@
+{
+  "name": "@internal/integration-tests",
+  "version": "0.0.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/backstage/community-plugins",
+    "directory": "workspaces/spanner-graph/packages/integration-tests"
+  },
+  "backstage": {
+    "role": "backend"
+  },
+  "scripts": {
+    "test": "backstage-cli package test",
+    "lint": "backstage-cli package lint",
+    "clean": "backstage-cli package clean"
+  },
+  "dependencies": {
+    "@backstage-community/plugin-catalog-backend-module-spanner-sync": "workspace:^"
+  },
+  "devDependencies": {
+    "@backstage-community/plugin-spanner-graph-backend": "workspace:^",
+    "@backstage/backend-plugin-api": "backstage:^",
+    "@backstage/backend-test-utils": "backstage:^",
+    "@backstage/catalog-model": "backstage:^",
+    "@backstage/cli": "backstage:^",
+    "@google-cloud/spanner": "^7.9.0",
+    "@types/express": "^4.17.13",
+    "@types/supertest": "^7.0.0",
+    "express": "^4.17.1",
+    "supertest": "^7.0.0"
+  }
+}

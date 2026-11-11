@@ -1,0 +1,187 @@
+/*
+ * Copyright 2026 The Backstage Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+import {
+  CodeSnippet,
+  InfoCard,
+  Progress,
+  ResponseErrorPanel,
+} from '@backstage/core-components';
+import { useApi } from '@backstage/core-plugin-api';
+import {
+  Box,
+  Button,
+  Chip,
+  Collapse,
+  makeStyles,
+  Paper,
+  TextField,
+  Typography,
+} from '@material-ui/core';
+import { useState } from 'react';
+import { NaturalLanguageGraphResponse, spannerGraphApiRef } from '../api/types';
+
+/**
+ * Props for {@link SpannerNaturalQueryCard}.
+ *
+ * @public
+ */
+export interface SpannerNaturalQueryCardProps {
+  title?: string;
+  defaultQuery?: string;
+  onSelectEntityRef?: (entityRef: string) => void;
+}
+
+const useStyles = makeStyles(theme => ({
+  queryRow: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: theme.spacing(1.5),
+    marginBottom: theme.spacing(2),
+  },
+  answerPaper: {
+    padding: theme.spacing(2),
+    marginBottom: theme.spacing(2),
+    backgroundColor: theme.palette.background.default,
+  },
+  chipRow: {
+    display: 'flex',
+    flexWrap: 'wrap',
+    gap: theme.spacing(1),
+    marginTop: theme.spacing(1),
+  },
+}));
+
+/**
+ * Natural-language graph query card displaying synthesized answers, collapsible ISO GQL statements,
+ * and clickable matched entity chips.
+ *
+ * @public
+ */
+export function SpannerNaturalQueryCard(props: SpannerNaturalQueryCardProps) {
+  const {
+    title = 'Ask Spanner Graph (Natural Language to ISO GQL)',
+    defaultQuery = 'Which production services depend on orders-spanner-db?',
+    onSelectEntityRef,
+  } = props;
+
+  const classes = useStyles();
+  const api = useApi(spannerGraphApiRef);
+
+  const [query, setQuery] = useState<string>(defaultQuery);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<Error | undefined>(undefined);
+  const [response, setResponse] = useState<
+    NaturalLanguageGraphResponse | undefined
+  >(undefined);
+  const [showGql, setShowGql] = useState<boolean>(false);
+
+  const handleAsk = async () => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return;
+    }
+    setLoading(true);
+    setError(undefined);
+    try {
+      const result = await api.askNaturalLanguage(trimmed);
+      setResponse(result);
+    } catch (err) {
+      setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <InfoCard title={title}>
+      <Box className={classes.queryRow}>
+        <TextField
+          id="spanner-natural-query-input"
+          label="Ask a question about catalog dependencies or blast radius"
+          variant="outlined"
+          size="small"
+          fullWidth
+          value={query}
+          onChange={event => setQuery(event.target.value)}
+        />
+        <Button
+          variant="contained"
+          color="primary"
+          disabled={loading || !query.trim()}
+          onClick={handleAsk}
+        >
+          Ask Graph
+        </Button>
+      </Box>
+
+      {loading && <Progress />}
+      {!loading && error && <ResponseErrorPanel error={error} />}
+
+      {!loading && response && (
+        <Box>
+          <Paper variant="outlined" className={classes.answerPaper}>
+            <Typography variant="subtitle2" gutterBottom>
+              Synthesized Answer
+            </Typography>
+            <Typography variant="body1">{response.answer}</Typography>
+
+            {response.matchedNodes.length > 0 && (
+              <Box mt={2}>
+                <Typography variant="caption" color="textSecondary">
+                  Matched Entities
+                </Typography>
+                <Box className={classes.chipRow}>
+                  {response.matchedNodes.map(node => (
+                    <Chip
+                      key={node.id}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={node.id}
+                      clickable={Boolean(onSelectEntityRef)}
+                      onClick={() => onSelectEntityRef?.(node.id)}
+                    />
+                  ))}
+                </Box>
+              </Box>
+            )}
+          </Paper>
+
+          {response.executedGql && (
+            <Box>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => setShowGql(prev => !prev)}
+              >
+                {showGql ? 'Hide Executed ISO GQL' : 'Show Executed ISO GQL'}
+              </Button>
+              <Collapse in={showGql}>
+                <Box mt={1}>
+                  <CodeSnippet
+                    text={response.executedGql}
+                    language="sql"
+                    showCopyCodeButton
+                  />
+                </Box>
+              </Collapse>
+            </Box>
+          )}
+        </Box>
+      )}
+    </InfoCard>
+  );
+}
