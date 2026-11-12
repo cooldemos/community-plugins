@@ -1,0 +1,231 @@
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: commerce-platform
+  title: Commerce Platform Domain
+  description: Core digital commerce domain encompassing checkout, payment, and inventory systems.
+spec:
+  owner: group:default/platform-sre
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: platform-sre
+  title: Platform SRE
+  description: Site reliability engineering group responsible for commerce infrastructure.
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: checkout-squad
+  title: Checkout Squad
+  description: Product engineering squad owning the checkout and payment flows.
+spec:
+  type: team
+  parent: group:default/platform-sre
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: Group
+metadata:
+  name: data-platform
+  title: Data Platform Team
+  description: Engineering team managing Cloud Spanner and streaming pipelines.
+spec:
+  type: team
+  children: []
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: checkout-system
+  title: Checkout System
+  description: End-to-end order placement, payment processing, and ledger persistence.
+spec:
+  owner: group:default/checkout-squad
+  domain: domain:default/commerce-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: Catalog-Fulfillment
+  title: Catalog Fulfillment System
+  description: Inventory reservation and warehouse fulfillment orchestration.
+spec:
+  owner: group:default/platform-sre
+  domain: domain:default/commerce-platform
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: orders-spanner-db
+  title: Orders Cloud Spanner Database
+  description: Multi-region Cloud Spanner database storing order ledgers and graph topology.
+spec:
+  type: database
+  lifecycle: production
+  owner: group:default/data-platform
+  system: system:default/checkout-system
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: payment-Redis-Cache
+  title: Payment Idempotency Cache
+  description: Memorystore Redis cluster caching payment idempotency tokens.
+spec:
+  type: cache
+  lifecycle: production
+  owner: group:default/checkout-squad
+  system: system:default/checkout-system
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: checkout-pubsub-topic
+  title: Checkout Events Pub/Sub Topic
+  description: Event stream carrying committed order events to fulfillment consumers.
+spec:
+  type: messaging-topic
+  lifecycle: production
+  owner: group:default/data-platform
+  system: system:default/checkout-system
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: payment-grpc-api
+  title: Payment gRPC API
+  description: Internal gRPC interface for authorizing and capturing customer payments.
+spec:
+  type: grpc
+  lifecycle: production
+  owner: group:default/checkout-squad
+  system: system:default/checkout-system
+  definition: |
+    syntax = "proto3";
+    package commerce.payment.v1;
+    service PaymentService {
+      rpc AuthorizePayment (AuthorizeRequest) returns (AuthorizeResponse);
+    }
+    message AuthorizeRequest { string order_id = 1; int64 amount_cents = 2; }
+    message AuthorizeResponse { string transaction_id = 1; string status = 2; }
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: inventory-rest-api
+  title: Inventory Reservation REST API
+  description: OpenAPI service for checking and reserving stock across fulfillment centers.
+spec:
+  type: openapi
+  lifecycle: production
+  owner: group:default/platform-sre
+  system: system:default/Catalog-Fulfillment
+  definition: |
+    openapi: 3.0.0
+    info:
+      title: Inventory Reservation API
+      version: 1.0.0
+    paths:
+      /v1/reservations:
+        post:
+          summary: Reserve SKU inventory
+          responses:
+            '200':
+              description: Reservation confirmed
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payment-worker
+  title: Payment Settlement Worker
+  description: Background service that settles authorized transactions and writes to Cloud Spanner.
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/checkout-squad
+  system: system:default/checkout-system
+  providesApis:
+    - api:default/payment-grpc-api
+  dependsOn:
+    - resource:default/orders-spanner-db
+    - resource:default/payment-Redis-Cache
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: checkout-service
+  title: Checkout Orchestrator Service
+  description: Core checkout orchestrator coordinating inventory reservations, payments, and order events.
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/checkout-squad
+  system: system:default/checkout-system
+  consumesApis:
+    - api:default/payment-grpc-api
+    - api:default/inventory-rest-api
+  dependsOn:
+    - component:default/payment-worker
+    - resource:default/orders-spanner-db
+    - resource:default/checkout-pubsub-topic
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: order-api-gateway
+  title: Order Edge API Gateway
+  description: Public edge gateway routing storefront traffic to checkout and fulfillment backends.
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform-sre
+  system: system:default/checkout-system
+  dependsOn:
+    - component:default/checkout-service
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: storefront-web
+  title: Commerce Storefront Web App
+  description: Customer-facing web application for browsing catalog items and placing orders.
+spec:
+  type: website
+  lifecycle: production
+  owner: group:default/checkout-squad
+  system: system:default/checkout-system
+  dependsOn:
+    - component:default/order-api-gateway
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: inventory-sync
+  title: Inventory Sync Worker
+  description: Consumes checkout Pub/Sub events and updates warehouse stock levels.
+spec:
+  type: service
+  lifecycle: production
+  owner: group:default/platform-sre
+  system: system:default/Catalog-Fulfillment
+  providesApis:
+    - api:default/inventory-rest-api
+  dependsOn:
+    - resource:default/checkout-pubsub-topic
+    - resource:default/orders-spanner-db
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: audit-archiver-isolated
+  title: Isolated Compliance Audit Archiver
+  description: Standalone compliance archival job with no upstream or downstream catalog relations.
+spec:
+  type: service
+  lifecycle: experimental
+  owner: group:default/data-platform
