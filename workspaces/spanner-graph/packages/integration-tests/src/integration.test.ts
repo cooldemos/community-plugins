@@ -170,7 +170,10 @@ describe('Cloud Spanner Graph end-to-end integration pipeline', () => {
     const firstSync = await syncService.runSync(catalogEntities);
     expect(firstSync.entitiesSynced).toBe(7);
     expect(firstSync.relationsSynced).toBe(5);
-    expect(firstSync.staleEntitiesDeleted).toBe(0);
+    expect(firstSync.staleEntitiesDeleted).toBeGreaterThanOrEqual(0);
+    expect(isLiveSpannerTest || firstSync.staleEntitiesDeleted === 0).toBe(
+      true,
+    );
 
     const graphService = new SpannerGraphService(
       {

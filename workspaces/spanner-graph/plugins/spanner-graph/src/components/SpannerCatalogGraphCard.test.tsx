@@ -22,6 +22,7 @@ import {
   BLAST_RADIUS_RELATIONS,
   mergeParallelEdges,
   SpannerCatalogGraphCard,
+  truncateNodeLabel,
 } from './SpannerCatalogGraphCard';
 
 describe('SpannerCatalogGraphCard', () => {
@@ -162,5 +163,15 @@ describe('SpannerCatalogGraphCard', () => {
       { mergeReciprocal: false },
     );
     expect(unmergedReciprocal).toHaveLength(2);
+    expect(BLAST_RADIUS_RELATIONS).toEqual([
+      'dependsOn',
+      'consumesApi',
+      'apiProvidedBy',
+      'partOf',
+    ]);
+    expect(truncateNodeLabel('short-name', 20)).toBe('short-name');
+    expect(truncateNodeLabel('very-long-microservice-component-name', 20)).toBe(
+      'very-long-microserv…',
+    );
   });
 });

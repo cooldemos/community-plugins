@@ -22,20 +22,25 @@ import { SpannerEntityRow, SpannerRelationRow } from '../types';
  *
  * @public
  */
-export function normalizeEntityRef(ref: string): string {
-  const trimmed = ref.trim();
+export function normalizeEntityRef(
+  rawRef: string,
+  defaultKind: string = 'component',
+): string {
+  const trimmed = rawRef.trim();
   if (!trimmed) {
     throw new Error('Entity reference cannot be empty');
   }
 
-  let kind = 'component';
+  const normalizedDefaultKind =
+    defaultKind.trim().toLocaleLowerCase('en-US') || 'component';
+  let kind = normalizedDefaultKind;
   let remainder = trimmed;
 
   const colonIdx = trimmed.indexOf(':');
   if (colonIdx !== -1) {
     kind =
       trimmed.slice(0, colonIdx).trim().toLocaleLowerCase('en-US') ||
-      'component';
+      normalizedDefaultKind;
     remainder = trimmed.slice(colonIdx + 1).trim();
   }
 
@@ -51,7 +56,9 @@ export function normalizeEntityRef(ref: string): string {
   }
 
   if (!name) {
-    throw new Error(`Invalid entity reference "${ref}": missing entity name`);
+    throw new Error(
+      `Invalid entity reference "${rawRef}": missing entity name`,
+    );
   }
 
   return `${kind}:${namespace}/${name}`;
@@ -79,11 +86,11 @@ export function transformEntityToSpannerNode(
   const lifecycle = typeof spec.lifecycle === 'string' ? spec.lifecycle : null;
   const ownerRef =
     typeof spec.owner === 'string' && spec.owner.trim()
-      ? normalizeEntityRef(spec.owner)
+      ? normalizeEntityRef(spec.owner, 'group')
       : null;
   const systemRef =
     typeof spec.system === 'string' && spec.system.trim()
-      ? normalizeEntityRef(spec.system)
+      ? normalizeEntityRef(spec.system, 'system')
       : null;
 
   return {

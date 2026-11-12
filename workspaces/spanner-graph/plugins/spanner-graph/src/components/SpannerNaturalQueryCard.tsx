@@ -31,6 +31,7 @@ import {
   Typography,
 } from '@material-ui/core';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { NaturalLanguageGraphResponse, spannerGraphApiRef } from '../api/types';
 
 /**
@@ -48,15 +49,22 @@ const AI_SERVICE_CONFIG_SNIPPET = `spannerGraph:
   projectId: your-gcp-project
   instanceId: backstage-graph-instance
   databaseId: backstage-catalog
-  aiServiceUrl: https://your-natural-language-gql-service.a.run.app`;
+  llm:
+    provider: vertex
+    model: gemini-3-flash-preview
+    location: global`;
 
-/** Checks whether an error indicates that `spannerGraph.aiServiceUrl` has not been configured. */
+/** Checks whether an error indicates that natural-language LLM translation is not configured on the backend. */
 function isUnconfiguredAiServiceError(error: Error): boolean {
   const causeMessage = (error as { cause?: { message?: string } }).cause
     ?.message;
   const details = [error.message, causeMessage].filter(Boolean).join(' ');
   return (
-    details.includes('aiServiceUrl') || details.includes('400 Bad Request')
+    details.includes('aiServiceUrl') ||
+    details.includes('NotImplementedError') ||
+    details.includes('501') ||
+    details.includes('spannerGraph.llm') ||
+    details.includes('spannerGraph.projectId')
   );
 }
 
@@ -95,6 +103,7 @@ export function SpannerNaturalQueryCard(props: SpannerNaturalQueryCardProps) {
 
   const classes = useStyles();
   const api = useApi(spannerGraphApiRef);
+  const [, setSearchParams] = useSearchParams();
 
   const [query, setQuery] = useState<string>(defaultQuery);
   const [loading, setLoading] = useState<boolean>(false);
@@ -103,6 +112,18 @@ export function SpannerNaturalQueryCard(props: SpannerNaturalQueryCardProps) {
     NaturalLanguageGraphResponse | undefined
   >(undefined);
   const [showGql, setShowGql] = useState<boolean>(false);
+
+  const handleSelectEntity = (entityRef: string) => {
+    if (onSelectEntityRef) {
+      onSelectEntityRef(entityRef);
+      return;
+    }
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('root', entityRef);
+      return next;
+    });
+  };
 
   const handleAsk = async () => {
     const trimmed = query.trim();
@@ -185,8 +206,8 @@ export function SpannerNaturalQueryCard(props: SpannerNaturalQueryCardProps) {
                       color="primary"
                       variant="outlined"
                       label={node.id}
-                      clickable={Boolean(onSelectEntityRef)}
-                      onClick={() => onSelectEntityRef?.(node.id)}
+                      clickable
+                      onClick={() => handleSelectEntity(node.id)}
                     />
                   ))}
                 </Box>

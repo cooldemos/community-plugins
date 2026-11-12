@@ -13,6 +13,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+import {
+  NotImplementedError,
+  ServiceUnavailableError,
+} from '@backstage/errors';
 import { mockServices } from '@backstage/backend-test-utils';
 import express from 'express';
 import request from 'supertest';
@@ -123,5 +127,21 @@ describe('createRouter', () => {
     expect(executeNaturalQuery).toHaveBeenCalledWith(
       'What depends on orders-spanner-db?',
     );
+
+    executeNaturalQuery.mockRejectedValueOnce(
+      new NotImplementedError('Natural language queries disabled'),
+    );
+    const notImplementedResponse = await request(app)
+      .post('/natural-query')
+      .send({ query: 'What depends on orders-spanner-db?' });
+    expect(notImplementedResponse.status).toBe(501);
+
+    executeNaturalQuery.mockRejectedValueOnce(
+      new ServiceUnavailableError('LLM upstream unavailable'),
+    );
+    const unavailableResponse = await request(app)
+      .post('/natural-query')
+      .send({ query: 'What depends on orders-spanner-db?' });
+    expect(unavailableResponse.status).toBe(503);
   });
 });

@@ -174,7 +174,30 @@ export class InMemorySpannerDatabase {
       return [found ? [wrapRow({ ...found })] : []];
     }
 
-    if (/MATCH\s+(?:p\s*=\s*)?TRAIL/i.test(sql)) {
+    if (
+      /FROM\s+entities\s+WHERE\s+LOWER\(name\)\s*=\s*LOWER\(@shortName\)/i.test(
+        sql,
+      )
+    ) {
+      const shortName = String(params.shortName ?? '').toLocaleLowerCase(
+        'en-US',
+      );
+      const fallbackRef = String(params.fallbackRef ?? '').toLocaleLowerCase(
+        'en-US',
+      );
+      const matches = Array.from(this.entities.values()).filter(
+        e =>
+          e.name.toLocaleLowerCase('en-US') === shortName ||
+          e.entity_ref.toLocaleLowerCase('en-US') === fallbackRef,
+      );
+      return [
+        matches.length > 0
+          ? [wrapRow({ entity_ref: matches[0].entity_ref })]
+          : [],
+      ];
+    }
+
+    if (/MATCH\s+(?:p\s*=\s*)?(?:TRAIL|ACYCLIC)/i.test(sql)) {
       return [this.evaluateGqlMatchTrail(sql, params)];
     }
 

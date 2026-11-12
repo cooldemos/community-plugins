@@ -56,6 +56,8 @@ export const SPANNER_GRAPH_DDL_STATEMENTS: readonly string[] = [
   ) PRIMARY KEY (entity_ref)`,
   `CREATE INDEX IF NOT EXISTS idx_entities_id ON entities(entity_id)`,
   `CREATE INDEX IF NOT EXISTS idx_entities_kind_ns ON entities(kind, namespace)`,
+  `CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name) STORING (kind, namespace, title, lifecycle, owner_ref, system_ref)`,
+  `CREATE INDEX IF NOT EXISTS idx_entities_owner ON entities(owner_ref, kind, lifecycle) STORING (name, title, system_ref)`,
   `CREATE TABLE IF NOT EXISTS relations (
     entity_ref STRING(MAX) NOT NULL,
     relation_type STRING(128) NOT NULL,
@@ -270,7 +272,8 @@ export class SpannerSyncService {
       relationsSynced += batchResult.relationsSynced;
     }
 
-    const staleEntitiesDeleted = await this.reconcileStaleEntities(syncRunId);
+    const staleEntitiesDeleted =
+      entities.length > 0 ? await this.reconcileStaleEntities(syncRunId) : 0;
     const embeddingsGenerated = this.config.enableEmbeddings
       ? await this.generateEmbeddingsInDatabase()
       : 0;
@@ -319,8 +322,10 @@ export class SpannerSyncService {
     }
 
     await this.database.table('entities').upsert(nodeRows);
-    if (edgeRows.length > 0) {
-      await this.database.table('relations').upsert(edgeRows);
+    const edgeBatchSize = Math.max(1, this.config.batchSize ?? 500);
+    for (let offset = 0; offset < edgeRows.length; offset += edgeBatchSize) {
+      const edgeChunk = edgeRows.slice(offset, offset + edgeBatchSize);
+      await this.database.table('relations').upsert(edgeChunk);
     }
 
     return {

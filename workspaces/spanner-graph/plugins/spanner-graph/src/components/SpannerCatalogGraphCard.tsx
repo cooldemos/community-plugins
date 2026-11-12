@@ -56,20 +56,17 @@ export interface SpannerCatalogGraphCardProps {
 }
 
 /**
- * Operational dependency relation types used for blast-radius analysis,
- * excluding organizational ownership relations (`ownedBy` / `ownerOf`).
+ * Operational upstream-impact relation types used for blast-radius analysis
+ * (`-(dependsOn|consumesApi|apiProvidedBy|partOf)->` incoming into a dependency or resource),
+ * excluding inverse edges that would traverse downstream instead of upstream.
  *
  * @public
  */
 export const BLAST_RADIUS_RELATIONS: string[] = [
   'dependsOn',
-  'dependencyOf',
   'consumesApi',
-  'apiConsumedBy',
-  'providesApi',
   'apiProvidedBy',
   'partOf',
-  'hasPart',
 ];
 
 type RelationPreset =
@@ -139,6 +136,17 @@ const KIND_COLOR_MAP: Record<string, string> = {
 /** Returns the fill color associated with an entity kind. */
 export function getKindColor(kind: string): string {
   return KIND_COLOR_MAP[kind.toLocaleLowerCase('en-US')] ?? '#455a64';
+}
+
+/** Truncates long entity node labels with an ellipsis so text stays inside fixed-width SVG nodes. */
+export function truncateNodeLabel(
+  text: string,
+  maxLength: number = 20,
+): string {
+  if (text.length <= maxLength) {
+    return text;
+  }
+  return `${text.slice(0, maxLength - 1)}…`;
 }
 
 /**
@@ -480,6 +488,9 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
                   className={classes.nodeCursor}
                   onClick={() => handleNodeClick(node.id)}
                 >
+                  <title>
+                    {node.title ? `${node.id} — ${node.title}` : node.id}
+                  </title>
                   <rect
                     width={160}
                     height={52}
@@ -505,7 +516,7 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
                     fill="#ffffff"
                     fontSize={12}
                   >
-                    {node.name}
+                    {truncateNodeLabel(node.name, 20)}
                   </text>
                 </g>
               );

@@ -17,6 +17,8 @@ import {
   coreServices,
   createBackendPlugin,
 } from '@backstage/backend-plugin-api';
+import { actionsRegistryServiceRef } from '@backstage/backend-plugin-api/alpha';
+import { registerSpannerGraphMcpActions } from './actions/registerMcpActions';
 import { createRouter } from './service/router';
 import { SpannerGraphService } from './service/SpannerGraphService';
 
@@ -34,8 +36,9 @@ export const spannerGraphPlugin = createBackendPlugin({
         logger: coreServices.logger,
         httpAuth: coreServices.httpAuth,
         httpRouter: coreServices.httpRouter,
+        actionsRegistry: actionsRegistryServiceRef,
       },
-      async init({ config, logger, httpAuth, httpRouter }) {
+      async init({ config, logger, httpAuth, httpRouter, actionsRegistry }) {
         const graphService = SpannerGraphService.fromConfig(config, logger);
         const router = await createRouter({
           logger,
@@ -47,6 +50,11 @@ export const spannerGraphPlugin = createBackendPlugin({
         httpRouter.addAuthPolicy({
           path: '/health',
           allow: 'unauthenticated',
+        });
+
+        registerSpannerGraphMcpActions({
+          actionsRegistry,
+          graphService,
         });
       },
     });

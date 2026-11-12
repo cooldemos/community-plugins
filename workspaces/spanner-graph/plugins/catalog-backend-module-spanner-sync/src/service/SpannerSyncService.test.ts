@@ -77,13 +77,15 @@ describe('SpannerSyncService', () => {
     expect(created).toBe(true);
     expect(updateSchema).toHaveBeenCalledTimes(1);
     const statements = updateSchema.mock.calls[0][0] as string[];
-    expect(statements).toHaveLength(6);
+    expect(statements).toHaveLength(8);
     expect(statements[0]).toContain('CREATE TABLE IF NOT EXISTS entities');
-    expect(statements[3]).toContain(
+    expect(statements[3]).toContain('idx_entities_name');
+    expect(statements[4]).toContain('idx_entities_owner');
+    expect(statements[5]).toContain(
       'INTERLEAVE IN PARENT entities ON DELETE CASCADE',
     );
-    expect(statements[4]).toContain('relations_by_target');
-    expect(statements[5]).toContain(
+    expect(statements[6]).toContain('relations_by_target');
+    expect(statements[7]).toContain(
       'CREATE OR REPLACE PROPERTY GRAPH BackstageCatalogGraph',
     );
   });

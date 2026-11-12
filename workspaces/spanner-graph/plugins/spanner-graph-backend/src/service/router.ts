@@ -14,7 +14,13 @@
  * limitations under the License.
  */
 import { HttpAuthService, LoggerService } from '@backstage/backend-plugin-api';
-import { InputError } from '@backstage/errors';
+import {
+  AuthenticationError,
+  InputError,
+  NotAllowedError,
+  NotImplementedError,
+  ServiceUnavailableError,
+} from '@backstage/errors';
 import express, { NextFunction, Request, Response } from 'express';
 import Router from 'express-promise-router';
 import { GraphDirection, SpannerGraphService } from './SpannerGraphService';
@@ -35,6 +41,60 @@ const VALID_DIRECTIONS = new Set<GraphDirection>([
   'incoming',
   'both',
 ]);
+
+const ERROR_STATUS_BY_NAME: Record<string, number> = {
+  InputError: 400,
+  AuthenticationError: 401,
+  NotAllowedError: 403,
+  NotImplementedError: 501,
+  ServiceUnavailableError: 503,
+};
+
+/** Maps known Backstage error instances or error names to an HTTP status code. */
+function resolveKnownErrorStatus(
+  err: unknown,
+): { statusCode: number; name: string; message: string } | undefined {
+  if (!err || typeof err !== 'object') {
+    return undefined;
+  }
+
+  const errorName = (err as { name?: string }).name;
+  const message =
+    err instanceof Error ? err.message : 'Request could not be processed';
+
+  if (err instanceof InputError || errorName === 'InputError') {
+    return { statusCode: 400, name: 'InputError', message };
+  }
+  if (
+    err instanceof AuthenticationError ||
+    errorName === 'AuthenticationError'
+  ) {
+    return { statusCode: 401, name: 'AuthenticationError', message };
+  }
+  if (err instanceof NotAllowedError || errorName === 'NotAllowedError') {
+    return { statusCode: 403, name: 'NotAllowedError', message };
+  }
+  if (
+    err instanceof NotImplementedError ||
+    errorName === 'NotImplementedError'
+  ) {
+    return { statusCode: 501, name: 'NotImplementedError', message };
+  }
+  if (
+    err instanceof ServiceUnavailableError ||
+    errorName === 'ServiceUnavailableError'
+  ) {
+    return { statusCode: 503, name: 'ServiceUnavailableError', message };
+  }
+  if (errorName && errorName in ERROR_STATUS_BY_NAME) {
+    return {
+      statusCode: ERROR_STATUS_BY_NAME[errorName],
+      name: errorName,
+      message,
+    };
+  }
+  return undefined;
+}
 
 /** Splits a comma-separated query parameter into trimmed non-empty values. */
 function parseCsvParam(raw: unknown): string[] | undefined {
@@ -119,6 +179,9 @@ export async function createRouter(
     if (!query) {
       throw new InputError('Missing required body field: query');
     }
+    if (query.length > 1000) {
+      throw new InputError('Body field query cannot exceed 1000 characters');
+    }
 
     const result = await graphService.executeNaturalQuery(query);
     res.status(200).json(result);
@@ -130,15 +193,11 @@ export async function createRouter(
         next(err);
         return;
       }
-      if (
-        err instanceof InputError ||
-        (err &&
-          typeof err === 'object' &&
-          (err as { name?: string }).name === 'InputError')
-      ) {
-        const message =
-          err instanceof Error ? err.message : 'Invalid request parameters';
-        res.status(400).json({ error: { name: 'InputError', message } });
+      const mapped = resolveKnownErrorStatus(err);
+      if (mapped) {
+        res.status(mapped.statusCode).json({
+          error: { name: mapped.name, message: mapped.message },
+        });
         return;
       }
       logger.error(

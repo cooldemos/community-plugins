@@ -29,9 +29,15 @@ describe('transformer', () => {
     );
   });
 
-  it('defaults omitted kind to component and omitted namespace to default, and rejects blank refs', () => {
+  it('defaults omitted kind to defaultKind and omitted namespace to default, and rejects blank refs', () => {
     expect(normalizeEntityRef('payment-worker')).toBe(
       'component:default/payment-worker',
+    );
+    expect(normalizeEntityRef('checkout-squad', 'group')).toBe(
+      'group:default/checkout-squad',
+    );
+    expect(normalizeEntityRef('checkout-system', 'system')).toBe(
+      'system:default/checkout-system',
     );
     expect(normalizeEntityRef('API:payment-grpc-api')).toBe(
       'api:default/payment-grpc-api',

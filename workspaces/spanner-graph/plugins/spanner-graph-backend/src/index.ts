@@ -14,20 +14,28 @@
  * limitations under the License.
  */
 
+export { registerSpannerGraphMcpActions } from './actions/registerMcpActions';
 export { spannerGraphPlugin as default } from './plugin';
 export { spannerGraphPlugin } from './plugin';
 export { createRouter } from './service/router';
 export type { RouterOptions } from './service/router';
 export {
+  ALLOWED_CATALOG_RELATIONS,
+  compileNaturalGraphQuery,
+  NaturalGraphQueryIntentSchema,
   normalizeEntityRef,
+  resolveEntityRefInSpanner,
   SpannerGraphService,
 } from './service/SpannerGraphService';
 export type {
   GraphDirection,
   GraphEdge,
   GraphNode,
+  NaturalGraphQueryIntent,
   NaturalLanguageGraphResponse,
   SpannerGraphConfig,
+  SpannerGraphLlmConfig,
+  SpannerGraphLlmProvider,
   SubgraphQueryOptions,
   SubgraphResponse,
 } from './service/SpannerGraphService';

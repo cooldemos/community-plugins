@@ -47,8 +47,10 @@
     "@backstage/config": "backstage:^",
     "@backstage/errors": "backstage:^",
     "@google-cloud/spanner": "^7.9.0",
+    "@google/genai": "^1.41.0",
     "express": "^4.17.1",
-    "express-promise-router": "^4.1.0"
+    "express-promise-router": "^4.1.0",
+    "zod": "^3.22.3"
   },
   "devDependencies": {
     "@backstage/backend-test-utils": "backstage:^",

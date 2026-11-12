@@ -45,5 +45,34 @@ export interface Config {
      * Optional AI microservice endpoint for natural-language graph queries.
      */
     aiServiceUrl?: string;
+    /**
+     * Optional LLM configuration for direct natural-language-to-ISO-GQL translation.
+     */
+    llm?: {
+      /**
+       * LLM provider used to translate natural-language questions into structured graph intents.
+       * @default 'vertex'
+       */
+      provider?: 'vertex' | 'gemini' | 'litellm' | 'openai' | 'disabled';
+      /**
+       * Model identifier used by the selected LLM provider.
+       * @default 'gemini-3-flash-preview'
+       */
+      model?: string;
+      /**
+       * Vertex AI location used when `provider` is `'vertex'`.
+       * @default 'global'
+       */
+      location?: string;
+      /**
+       * OpenAI/LiteLLM-compatible base URL when `provider` is `'litellm'` or `'openai'`.
+       */
+      baseUrl?: string;
+      /**
+       * API key used when `provider` is `'gemini'`, `'litellm'`, or `'openai'`.
+       * @visibility secret
+       */
+      apiKey?: string;
+    };
   };
 }

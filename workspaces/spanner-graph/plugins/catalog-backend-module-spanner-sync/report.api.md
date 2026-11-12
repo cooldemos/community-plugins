@@ -14,7 +14,10 @@ export { catalogModuleSpannerSync };
 export default catalogModuleSpannerSync;
 
 // @public
-export function normalizeEntityRef(ref: string): string;
+export function normalizeEntityRef(
+  rawRef: string,
+  defaultKind?: string,
+): string;
 
 // @public
 export const SPANNER_GRAPH_DDL_STATEMENTS: readonly string[];

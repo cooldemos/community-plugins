@@ -22,7 +22,7 @@ describe('SpannerGraphService', () => {
     jest.restoreAllMocks();
   });
 
-  it('executes a parameterized ISO GQL MATCH TRAIL query and deduplicates nodes and edges', async () => {
+  it('executes a parameterized ISO GQL MATCH ACYCLIC query and deduplicates nodes and edges', async () => {
     const run = jest.fn().mockResolvedValue([
       [
         {
@@ -78,6 +78,14 @@ describe('SpannerGraphService', () => {
                 properties: {
                   source_entity_ref: 'component:default/checkout-service',
                   target_entity_ref: 'resource:default/orders-spanner-db',
+                  relation_type: 'dependsOn',
+                },
+              },
+              {
+                kind: 'edge',
+                properties: {
+                  source_entity_ref: 'component:default/checkout-service',
+                  target_entity_ref: 'resource:default/missing-node',
                   relation_type: 'dependsOn',
                 },
               },
@@ -231,5 +239,108 @@ describe('SpannerGraphService', () => {
     expect(normalizeEntityRef('Resource:Default/orders-spanner-db')).toBe(
       'resource:default/orders-spanner-db',
     );
+  });
+
+  it('translates natural language queries into parameterized MATCH p = ACYCLIC GQL using an OpenAI-compatible LLM provider', async () => {
+    const run = jest
+      .fn()
+      .mockResolvedValueOnce([
+        [
+          {
+            toJSON: () => ({
+              entity_ref: 'resource:default/orders-spanner-db',
+            }),
+          },
+        ],
+      ])
+      .mockResolvedValueOnce([
+        [
+          {
+            toJSON: () => ({
+              path: [
+                {
+                  kind: 'node',
+                  properties: {
+                    entity_ref: 'resource:default/orders-spanner-db',
+                    kind: 'resource',
+                    namespace: 'default',
+                    name: 'orders-spanner-db',
+                  },
+                },
+                {
+                  kind: 'edge',
+                  properties: {
+                    source_entity_ref: 'component:default/checkout-service',
+                    target_entity_ref: 'resource:default/orders-spanner-db',
+                    relation_type: 'dependsOn',
+                  },
+                },
+                {
+                  kind: 'node',
+                  properties: {
+                    entity_ref: 'component:default/checkout-service',
+                    kind: 'component',
+                    namespace: 'default',
+                    name: 'checkout-service',
+                    lifecycle: 'production',
+                  },
+                },
+              ],
+            }),
+          },
+        ],
+      ]);
+
+    const config = new ConfigReader({
+      spannerGraph: {
+        instanceId: 'demo-instance',
+        databaseId: 'demo-db',
+        llm: {
+          provider: 'litellm',
+          baseUrl: 'http://localhost:4000/v1',
+          model: 'gemini-3-flash-preview',
+        },
+      },
+    });
+
+    const service = SpannerGraphService.fromConfig(
+      config,
+      mockServices.logger.mock(),
+      { run },
+    );
+
+    jest.spyOn(global, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                rootEntityRef: 'orders-spanner-db',
+                direction: 'incoming',
+                maxDepth: 2,
+                relationTypes: ['dependsOn'],
+                entityKinds: ['component'],
+                lifecycle: 'production',
+              }),
+            },
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await service.executeNaturalQuery(
+      'Which production services depend on orders-spanner-db?',
+    );
+
+    expect(result.executedGql).toContain('MATCH p = ACYCLIC');
+    expect(result.matchedNodes).toEqual([
+      expect.objectContaining({
+        id: 'component:default/checkout-service',
+        lifecycle: 'production',
+      }),
+    ]);
+    expect(result.answer).toContain('component:default/checkout-service');
   });
 });

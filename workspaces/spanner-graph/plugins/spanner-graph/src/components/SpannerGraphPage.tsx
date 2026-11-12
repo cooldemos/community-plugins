@@ -40,13 +40,14 @@ import {
   TextField,
   Typography,
 } from '@material-ui/core';
-import { ReactNode, useMemo, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { GraphDirection, GraphNode } from '../api/types';
 import { useSpannerGraph } from '../hooks/useSpannerGraph';
 import {
   getKindColor,
   mergeParallelEdges,
+  truncateNodeLabel,
   useSafeEntityRoute,
 } from './SpannerCatalogGraphCard';
 
@@ -180,6 +181,14 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
     useState<string[]>(relationsFromQuery);
   const [selectedKinds, setSelectedKinds] = useState<string[]>([]);
 
+  useEffect(() => {
+    const queryRoot = searchParams.get('root');
+    if (queryRoot && queryRoot !== activeRoot) {
+      setRootInput(queryRoot);
+      setActiveRoot(queryRoot);
+    }
+  }, [searchParams, activeRoot]);
+
   const { data, loading, error } = useSpannerGraph({
     root: activeRoot,
     maxDepth,
@@ -224,11 +233,15 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
       return;
     }
     setActiveRoot(trimmed);
-    setSearchParams({
+    const nextParams: Record<string, string> = {
       root: trimmed,
       maxDepth: String(maxDepth),
       direction,
-    });
+    };
+    if (selectedRelations.length > 0) {
+      nextParams.relationTypes = selectedRelations.join(',');
+    }
+    setSearchParams(nextParams);
   };
 
   const toggleRelation = (relation: string) => {
@@ -446,6 +459,11 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
                           className={classes.nodeCursor}
                           onClick={() => handleNodeClick(node.id)}
                         >
+                          <title>
+                            {node.title
+                              ? `${node.id} — ${node.title}`
+                              : node.id}
+                          </title>
                           <rect
                             width={172}
                             height={54}
@@ -471,7 +489,7 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
                             fill="#ffffff"
                             fontSize={12}
                           >
-                            {node.name}
+                            {truncateNodeLabel(node.name, 20)}
                           </text>
                         </g>
                       );

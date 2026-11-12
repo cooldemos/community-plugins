@@ -95,9 +95,19 @@ describe('SpannerGraphPage and SpannerNaturalQueryCard', () => {
     expect(
       await screen.findByText('Checkout service depends on orders-spanner-db.'),
     ).toBeInTheDocument();
-    expect(
-      await screen.findByText('resource:default/orders-spanner-db'),
-    ).toBeInTheDocument();
+    const matchedChip = await screen.findByRole('button', {
+      name: 'resource:default/orders-spanner-db',
+    });
+    expect(matchedChip).toBeInTheDocument();
+
+    fireEvent.click(matchedChip);
+    await waitFor(() =>
+      expect(getSubgraph).toHaveBeenCalledWith(
+        expect.objectContaining({
+          root: 'resource:default/orders-spanner-db',
+        }),
+      ),
+    );
   });
 
   it('falls back to initialMaxDepth and initialDirection when URL query parameters are out of range or invalid', async () => {

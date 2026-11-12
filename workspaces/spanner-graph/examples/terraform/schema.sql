@@ -36,6 +36,10 @@ CREATE INDEX idx_entities_id ON entities(entity_id);
 
 CREATE INDEX idx_entities_kind_ns ON entities(kind, namespace);
 
+CREATE INDEX IF NOT EXISTS idx_entities_name ON entities(name) STORING (kind, namespace, title, lifecycle, owner_ref, system_ref);
+
+CREATE INDEX IF NOT EXISTS idx_entities_owner ON entities(owner_ref, kind, lifecycle) STORING (name, title, system_ref);
+
 CREATE TABLE relations (
   entity_ref STRING(MAX) NOT NULL,
   relation_type STRING(128) NOT NULL,
