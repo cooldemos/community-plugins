@@ -27,7 +27,6 @@ import { useRouteRef } from '@backstage/core-plugin-api';
 import { entityRouteRef, useEntity } from '@backstage/plugin-catalog-react';
 import {
   Box,
-  Chip,
   FormControl,
   InputLabel,
   makeStyles,
@@ -72,6 +71,51 @@ export const BLAST_RADIUS_RELATIONS: string[] = [
   'partOf',
   'hasPart',
 ];
+
+type RelationPreset =
+  | 'all'
+  | 'dependencies'
+  | 'blast-radius'
+  | 'hierarchy'
+  | 'custom';
+
+const DEPENDENCY_RELATIONS: string[] = [
+  'dependsOn',
+  'dependencyOf',
+  'consumesApi',
+  'apiConsumedBy',
+  'providesApi',
+  'apiProvidedBy',
+];
+
+const HIERARCHY_RELATIONS: string[] = [
+  'partOf',
+  'hasPart',
+  'ownedBy',
+  'ownerOf',
+  'childOf',
+  'parentOf',
+];
+
+/** Determines the initial relation preset matching the provided `relationTypes` array. */
+function resolveInitialRelationPreset(
+  relationTypes: string[] | undefined,
+): RelationPreset {
+  if (!relationTypes || relationTypes.length === 0) {
+    return 'all';
+  }
+  const normalized = [...relationTypes].sort().join(',');
+  if (normalized === [...BLAST_RADIUS_RELATIONS].sort().join(',')) {
+    return 'blast-radius';
+  }
+  if (normalized === [...DEPENDENCY_RELATIONS].sort().join(',')) {
+    return 'dependencies';
+  }
+  if (normalized === [...HIERARCHY_RELATIONS].sort().join(',')) {
+    return 'hierarchy';
+  }
+  return 'custom';
+}
 
 const INVERSE_RELATION_MAP: Record<string, string> = {
   dependencyOf: 'dependsOn',
@@ -230,14 +274,36 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
   const catalogEntityRoute = useSafeEntityRoute();
 
   const rootEntityRef = useMemo(() => stringifyEntityRef(entity), [entity]);
+  const initialPreset = useMemo(
+    () => resolveInitialRelationPreset(relationTypes),
+    [relationTypes],
+  );
   const [depth, setDepth] = useState<number>(initialDepth);
   const [direction, setDirection] = useState<GraphDirection>(initialDirection);
+  const [relationPreset, setRelationPreset] =
+    useState<RelationPreset>(initialPreset);
+
+  const activeRelationTypes = useMemo(() => {
+    switch (relationPreset) {
+      case 'dependencies':
+        return DEPENDENCY_RELATIONS;
+      case 'blast-radius':
+        return BLAST_RADIUS_RELATIONS;
+      case 'hierarchy':
+        return HIERARCHY_RELATIONS;
+      case 'custom':
+        return relationTypes;
+      case 'all':
+      default:
+        return undefined;
+    }
+  }, [relationPreset, relationTypes]);
 
   const { data, loading, error } = useSpannerGraph({
     root: rootEntityRef,
     maxDepth: depth,
     direction,
-    relationTypes,
+    relationTypes: activeRelationTypes,
     entityKinds,
   });
 
@@ -272,8 +338,8 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
   );
 
   const relationTypesParam =
-    relationTypes && relationTypes.length > 0
-      ? `&relationTypes=${encodeURIComponent(relationTypes.join(','))}`
+    activeRelationTypes && activeRelationTypes.length > 0
+      ? `&relationTypes=${encodeURIComponent(activeRelationTypes.join(','))}`
       : '';
   const explorerUrl = `/spanner-graph?root=${encodeURIComponent(
     rootEntityRef,
@@ -338,20 +404,55 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
               <MenuItem value="incoming">Incoming (Dependents)</MenuItem>
             </Select>
           </FormControl>
+
+          <FormControl
+            variant="outlined"
+            size="small"
+            className={classes.formControl}
+          >
+            <InputLabel id="spanner-card-relations-label">Relations</InputLabel>
+            <Select
+              labelId="spanner-card-relations-label"
+              id="spanner-card-relations-select"
+              label="Relations"
+              value={relationPreset}
+              onChange={event =>
+                setRelationPreset(event.target.value as RelationPreset)
+              }
+            >
+              <MenuItem value="all">All Relations</MenuItem>
+              <MenuItem value="dependencies">Dependencies & APIs</MenuItem>
+              <MenuItem value="blast-radius">
+                Blast Radius (Operational)
+              </MenuItem>
+              <MenuItem value="hierarchy">Hierarchy & Ownership</MenuItem>
+              {initialPreset === 'custom' && (
+                <MenuItem value="custom">Custom Filter</MenuItem>
+              )}
+            </Select>
+          </FormControl>
         </Box>
 
         <Box display="flex" alignItems="center" style={{ gap: 8 }}>
-          <Chip
-            size="small"
-            label={`${dependencyNodes.length} nodes`}
-            color="primary"
-            variant="outlined"
-          />
-          <Chip
-            size="small"
-            label={`${dependencyEdges.length} edges`}
-            variant="outlined"
-          />
+          <Typography variant="caption" color="textSecondary">
+            {`${dependencyNodes.length} nodes`}
+          </Typography>
+          <Typography variant="caption" color="textSecondary">
+            ·
+          </Typography>
+          <Typography variant="caption" color="textSecondary">
+            {`${dependencyEdges.length} edges`}
+          </Typography>
+          {data?.queryDurationMs !== undefined && (
+            <>
+              <Typography variant="caption" color="textSecondary">
+                ·
+              </Typography>
+              <Typography variant="caption" color="textSecondary">
+                {`${data.queryDurationMs} ms`}
+              </Typography>
+            </>
+          )}
         </Box>
       </Box>
 

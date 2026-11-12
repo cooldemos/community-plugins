@@ -397,23 +397,24 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
             <InfoCard title={`Topology Canvas (${activeRoot})`}>
               <Box className={classes.statsBar}>
                 <Box display="flex" alignItems="center" style={{ gap: 8 }}>
-                  <Chip
-                    size="small"
-                    color="primary"
-                    label={`${dependencyNodes.length} nodes`}
-                  />
-                  <Chip
-                    size="small"
-                    color="secondary"
-                    variant="outlined"
-                    label={`${dependencyEdges.length} edges`}
-                  />
+                  <Typography variant="caption" color="textSecondary">
+                    {`${dependencyNodes.length} nodes`}
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    ·
+                  </Typography>
+                  <Typography variant="caption" color="textSecondary">
+                    {`${dependencyEdges.length} edges`}
+                  </Typography>
                   {data?.queryDurationMs !== undefined && (
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      label={`${data.queryDurationMs} ms`}
-                    />
+                    <>
+                      <Typography variant="caption" color="textSecondary">
+                        ·
+                      </Typography>
+                      <Typography variant="caption" color="textSecondary">
+                        {`${data.queryDurationMs} ms`}
+                      </Typography>
+                    </>
                   )}
                 </Box>
                 <Typography variant="caption" color="textSecondary">

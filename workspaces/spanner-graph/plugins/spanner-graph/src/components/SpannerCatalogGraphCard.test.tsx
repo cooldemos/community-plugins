@@ -16,7 +16,7 @@
 import { Entity } from '@backstage/catalog-model';
 import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
-import { screen } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { SpannerGraphApi, spannerGraphApiRef } from '../api/types';
 import {
   BLAST_RADIUS_RELATIONS,
@@ -100,6 +100,24 @@ describe('SpannerCatalogGraphCard', () => {
     });
     expect(explorerLink.getAttribute('href')).toContain(
       `relationTypes=${encodeURIComponent(BLAST_RADIUS_RELATIONS.join(','))}`,
+    );
+
+    fireEvent.mouseDown(screen.getByLabelText('Relations'));
+    fireEvent.click(await screen.findByText('Hierarchy & Ownership'));
+
+    await waitFor(() =>
+      expect(getSubgraph).toHaveBeenCalledWith(
+        expect.objectContaining({
+          relationTypes: [
+            'partOf',
+            'hasPart',
+            'ownedBy',
+            'ownerOf',
+            'childOf',
+            'parentOf',
+          ],
+        }),
+      ),
     );
 
     const merged = mergeParallelEdges([
