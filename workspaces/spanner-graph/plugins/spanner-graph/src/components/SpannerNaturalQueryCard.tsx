@@ -44,6 +44,22 @@ export interface SpannerNaturalQueryCardProps {
   onSelectEntityRef?: (entityRef: string) => void;
 }
 
+const AI_SERVICE_CONFIG_SNIPPET = `spannerGraph:
+  projectId: your-gcp-project
+  instanceId: backstage-graph-instance
+  databaseId: backstage-catalog
+  aiServiceUrl: https://your-natural-language-gql-service.a.run.app`;
+
+/** Checks whether an error indicates that `spannerGraph.aiServiceUrl` has not been configured. */
+function isUnconfiguredAiServiceError(error: Error): boolean {
+  const causeMessage = (error as { cause?: { message?: string } }).cause
+    ?.message;
+  const details = [error.message, causeMessage].filter(Boolean).join(' ');
+  return (
+    details.includes('aiServiceUrl') || details.includes('400 Bad Request')
+  );
+}
+
 const useStyles = makeStyles(theme => ({
   queryRow: {
     display: 'flex',
@@ -128,7 +144,25 @@ export function SpannerNaturalQueryCard(props: SpannerNaturalQueryCardProps) {
       </Box>
 
       {loading && <Progress />}
-      {!loading && error && <ResponseErrorPanel error={error} />}
+      {!loading && error && isUnconfiguredAiServiceError(error) && (
+        <Paper variant="outlined" className={classes.answerPaper}>
+          <Typography variant="subtitle2" gutterBottom>
+            Natural Language AI Service Not Configured
+          </Typography>
+          <Typography variant="body2" color="textSecondary" gutterBottom>
+            Configure spannerGraph.aiServiceUrl in app-config.yaml to enable
+            natural-language-to-ISO-GQL translation:
+          </Typography>
+          <CodeSnippet
+            text={AI_SERVICE_CONFIG_SNIPPET}
+            language="yaml"
+            showCopyCodeButton
+          />
+        </Paper>
+      )}
+      {!loading && error && !isUnconfiguredAiServiceError(error) && (
+        <ResponseErrorPanel error={error} />
+      )}
 
       {!loading && response && (
         <Box>

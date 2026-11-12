@@ -120,7 +120,9 @@ describe('SpannerGraphPage and SpannerNaturalQueryCard', () => {
         <SpannerGraphPage initialMaxDepth={3} initialDirection="both" />
       </TestApiProvider>,
       {
-        routeEntries: ['/spanner-graph?maxDepth=99&direction=invalid'],
+        routeEntries: [
+          '/spanner-graph?maxDepth=99&direction=invalid&relationTypes=dependsOn,dependencyOf',
+        ],
       },
     );
 
@@ -129,8 +131,38 @@ describe('SpannerGraphPage and SpannerNaturalQueryCard', () => {
         expect.objectContaining({
           maxDepth: 3,
           direction: 'both',
+          relationTypes: ['dependsOn', 'dependencyOf'],
         }),
       ),
     );
+  });
+
+  it('renders an app-config.yaml setup snippet when spannerGraph.aiServiceUrl is not configured', async () => {
+    const mockApi: SpannerGraphApi = {
+      getSubgraph: jest.fn(),
+      askNaturalLanguage: jest
+        .fn()
+        .mockRejectedValue(
+          new Error(
+            'Request failed with 400 Bad Request, Natural language graph queries require spannerGraph.aiServiceUrl to be configured.',
+          ),
+        ),
+    };
+
+    await renderInTestApp(
+      <TestApiProvider apis={[[spannerGraphApiRef, mockApi]]}>
+        <SpannerNaturalQueryCard />
+      </TestApiProvider>,
+    );
+
+    fireEvent.click(screen.getByText('Ask Graph'));
+    expect(
+      await screen.findByText('Natural Language AI Service Not Configured'),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(
+        /Configure spannerGraph\.aiServiceUrl in app-config\.yaml/i,
+      ),
+    ).toBeInTheDocument();
   });
 });

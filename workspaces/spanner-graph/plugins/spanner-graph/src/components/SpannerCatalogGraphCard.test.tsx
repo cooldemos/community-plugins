@@ -19,6 +19,7 @@ import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { screen } from '@testing-library/react';
 import { SpannerGraphApi, spannerGraphApiRef } from '../api/types';
 import {
+  BLAST_RADIUS_RELATIONS,
   mergeParallelEdges,
   SpannerCatalogGraphCard,
 } from './SpannerCatalogGraphCard';
@@ -33,7 +34,7 @@ describe('SpannerCatalogGraphCard', () => {
     },
   };
 
-  it('renders subgraph nodes and merges parallel edges between identical node pairs', async () => {
+  it('renders subgraph nodes, merges parallel and reciprocal edges, and preserves relationTypes in explorer deep-link', async () => {
     const getSubgraph = jest.fn().mockResolvedValue({
       rootEntityRef: 'component:default/checkout-service',
       depth: 2,
@@ -61,6 +62,12 @@ describe('SpannerCatalogGraphCard', () => {
           label: 'dependsOn',
         },
         {
+          from: 'resource:default/orders-spanner-db',
+          to: 'component:default/checkout-service',
+          type: 'dependencyOf',
+          label: 'dependencyOf',
+        },
+        {
           from: 'component:default/checkout-service',
           to: 'resource:default/orders-spanner-db',
           type: 'consumesApi',
@@ -79,19 +86,32 @@ describe('SpannerCatalogGraphCard', () => {
     await renderInTestApp(
       <TestApiProvider apis={[[spannerGraphApiRef, mockApi]]}>
         <EntityProvider entity={mockEntity}>
-          <SpannerCatalogGraphCard />
+          <SpannerCatalogGraphCard relationTypes={BLAST_RADIUS_RELATIONS} />
         </EntityProvider>
       </TestApiProvider>,
     );
 
     expect(await screen.findByText('checkout-service')).toBeInTheDocument();
     expect(await screen.findByText('orders-spanner-db')).toBeInTheDocument();
+    expect(await screen.findByText('1 edges')).toBeInTheDocument();
+
+    const explorerLink = screen.getByRole('link', {
+      name: /Open in Spanner Graph Explorer/i,
+    });
+    expect(explorerLink.getAttribute('href')).toContain(
+      `relationTypes=${encodeURIComponent(BLAST_RADIUS_RELATIONS.join(','))}`,
+    );
 
     const merged = mergeParallelEdges([
       {
         from: 'component:default/checkout-service',
         to: 'resource:default/orders-spanner-db',
         type: 'dependsOn',
+      },
+      {
+        from: 'resource:default/orders-spanner-db',
+        to: 'component:default/checkout-service',
+        type: 'dependencyOf',
       },
       {
         from: 'component:default/checkout-service',
@@ -107,5 +127,22 @@ describe('SpannerCatalogGraphCard', () => {
         label: 'dependsOn / consumesApi',
       },
     ]);
+
+    const unmergedReciprocal = mergeParallelEdges(
+      [
+        {
+          from: 'component:default/checkout-service',
+          to: 'resource:default/orders-spanner-db',
+          type: 'dependsOn',
+        },
+        {
+          from: 'resource:default/orders-spanner-db',
+          to: 'component:default/checkout-service',
+          type: 'dependencyOf',
+        },
+      ],
+      { mergeReciprocal: false },
+    );
+    expect(unmergedReciprocal).toHaveLength(2);
   });
 });

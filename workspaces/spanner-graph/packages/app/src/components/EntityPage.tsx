@@ -30,7 +30,10 @@ import {
   isComponentType,
   isKind,
 } from '@backstage/plugin-catalog';
-import { EntitySpannerGraphCard } from '@backstage-community/plugin-spanner-graph';
+import {
+  BLAST_RADIUS_RELATIONS,
+  EntitySpannerGraphCard,
+} from '@backstage-community/plugin-spanner-graph';
 
 const overviewContent = (
   <Grid container spacing={3} alignItems="stretch">
@@ -58,6 +61,7 @@ const blastRadiusTab = (
         variant="gridItem"
         maxDepth={4}
         direction="incoming"
+        relationTypes={BLAST_RADIUS_RELATIONS}
         height={560}
         title="Downstream Blast Radius & Impact Analysis"
       />

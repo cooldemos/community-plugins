@@ -27,6 +27,7 @@ export type {
   SubgraphResponse,
 } from './api/types';
 export {
+  BLAST_RADIUS_RELATIONS,
   mergeParallelEdges,
   SpannerCatalogGraphCard,
 } from './components/SpannerCatalogGraphCard';

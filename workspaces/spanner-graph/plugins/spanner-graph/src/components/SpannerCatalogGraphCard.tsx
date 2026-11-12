@@ -51,9 +51,36 @@ export interface SpannerCatalogGraphCardProps {
   direction?: GraphDirection;
   relationTypes?: string[];
   entityKinds?: string[];
+  mergeRelations?: boolean;
   height?: number;
   title?: string;
 }
+
+/**
+ * Operational dependency relation types used for blast-radius analysis,
+ * excluding organizational ownership relations (`ownedBy` / `ownerOf`).
+ *
+ * @public
+ */
+export const BLAST_RADIUS_RELATIONS: string[] = [
+  'dependsOn',
+  'dependencyOf',
+  'consumesApi',
+  'apiConsumedBy',
+  'providesApi',
+  'apiProvidedBy',
+  'partOf',
+  'hasPart',
+];
+
+const INVERSE_RELATION_MAP: Record<string, string> = {
+  dependencyOf: 'dependsOn',
+  hasPart: 'partOf',
+  ownerOf: 'ownedBy',
+  apiProvidedBy: 'providesApi',
+  apiConsumedBy: 'consumesApi',
+  parentOf: 'childOf',
+};
 
 const KIND_COLOR_MAP: Record<string, string> = {
   domain: '#5c6bc0',
@@ -72,24 +99,36 @@ export function getKindColor(kind: string): string {
 
 /**
  * Merges parallel edges between the same `(from, to)` node pair into a single labeled edge
- * so Dagre's simple-graph layout does not overwrite multi-relation edges.
+ * so Dagre's simple-graph layout does not overwrite multi-relation edges. When `options.mergeReciprocal`
+ * is enabled (the default), inverse catalog relations (such as `dependencyOf` and `dependsOn`) are
+ * normalized into a single canonical directed edge.
  *
  * @public
  */
-export function mergeParallelEdges(edges: GraphEdge[]): GraphEdge[] {
+export function mergeParallelEdges(
+  edges: GraphEdge[],
+  options?: { mergeReciprocal?: boolean },
+): GraphEdge[] {
+  const mergeReciprocal = options?.mergeReciprocal ?? true;
   const grouped = new Map<
     string,
     { from: string; to: string; types: string[] }
   >();
 
   for (const edge of edges) {
-    const key = `${edge.from}::${edge.to}`;
-    const label = edge.label ?? edge.type;
+    const canonicalInverse =
+      mergeReciprocal && edge.type in INVERSE_RELATION_MAP
+        ? INVERSE_RELATION_MAP[edge.type]
+        : undefined;
+    const from = canonicalInverse ? edge.to : edge.from;
+    const to = canonicalInverse ? edge.from : edge.to;
+    const label = canonicalInverse ?? edge.label ?? edge.type;
+    const key = `${from}::${to}`;
     const existing = grouped.get(key);
     if (!existing) {
       grouped.set(key, {
-        from: edge.from,
-        to: edge.to,
+        from,
+        to,
         types: [label],
       });
     } else if (!existing.types.includes(label)) {
@@ -131,6 +170,10 @@ const useStyles = makeStyles(theme => ({
     borderRadius: theme.shape.borderRadius,
     overflow: 'hidden',
     backgroundColor: theme.palette.background.default,
+    '& .fullscreen, & .fullscreen > div, & .fullscreen > div > svg': {
+      width: '100% !important',
+      height: '100% !important',
+    },
   },
   footerRow: {
     display: 'flex',
@@ -176,6 +219,7 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
     direction: initialDirection = 'both',
     relationTypes,
     entityKinds,
+    mergeRelations = true,
     height = 380,
     title = 'Spanner Graph Dependencies',
   } = props;
@@ -198,8 +242,11 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
   });
 
   const mergedEdges = useMemo(
-    () => mergeParallelEdges(data?.edges ?? []),
-    [data?.edges],
+    () =>
+      mergeParallelEdges(data?.edges ?? [], {
+        mergeReciprocal: mergeRelations,
+      }),
+    [data?.edges, mergeRelations],
   );
 
   const dependencyNodes: Array<DependencyGraphTypes.DependencyNode<GraphNode>> =
@@ -224,9 +271,13 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
     [mergedEdges],
   );
 
+  const relationTypesParam =
+    relationTypes && relationTypes.length > 0
+      ? `&relationTypes=${encodeURIComponent(relationTypes.join(','))}`
+      : '';
   const explorerUrl = `/spanner-graph?root=${encodeURIComponent(
     rootEntityRef,
-  )}&maxDepth=${depth}&direction=${direction}`;
+  )}&maxDepth=${depth}&direction=${direction}${relationTypesParam}`;
 
   const handleNodeClick = (nodeId: string) => {
     try {

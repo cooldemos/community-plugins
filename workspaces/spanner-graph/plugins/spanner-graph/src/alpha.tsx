@@ -111,6 +111,7 @@ export const entitySpannerBlastRadiusContent =
                 variant="fullHeight"
                 maxDepth={config.maxDepth ?? 4}
                 direction={config.direction ?? 'incoming'}
+                relationTypes={m.BLAST_RADIUS_RELATIONS}
                 height={600}
                 title="Downstream Blast Radius & Impact Analysis"
               />,

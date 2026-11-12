@@ -30,11 +30,13 @@ import {
   Button,
   Chip,
   FormControl,
+  FormControlLabel,
   Grid,
   InputLabel,
   makeStyles,
   MenuItem,
   Select,
+  Switch,
   TextField,
   Typography,
 } from '@material-ui/core';
@@ -57,6 +59,7 @@ export interface SpannerGraphPageProps {
   initialRootRef?: string;
   initialMaxDepth?: number;
   initialDirection?: GraphDirection;
+  mergeRelations?: boolean;
   noHeader?: boolean;
   children?: ReactNode;
 }
@@ -103,6 +106,10 @@ const useStyles = makeStyles(theme => ({
     borderRadius: theme.shape.borderRadius,
     overflow: 'hidden',
     backgroundColor: theme.palette.background.default,
+    '& .fullscreen, & .fullscreen > div, & .fullscreen > div > svg': {
+      width: '100% !important',
+      height: '100% !important',
+    },
   },
   statsBar: {
     display: 'flex',
@@ -127,6 +134,7 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
     initialRootRef = 'component:default/checkout-service',
     initialMaxDepth = 3,
     initialDirection = 'both',
+    mergeRelations: initialMergeRelations = true,
     noHeader = false,
     children,
   } = props;
@@ -147,6 +155,12 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
     rawDirection === 'both'
       ? rawDirection
       : initialDirection;
+  const relationsFromQuery =
+    searchParams
+      .get('relationTypes')
+      ?.split(',')
+      .map(item => item.trim())
+      .filter(Boolean) ?? [];
 
   const [rootInput, setRootInput] = useState<string>(rootFromQuery);
   const [activeRoot, setActiveRoot] = useState<string>(rootFromQuery);
@@ -159,7 +173,11 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
   );
   const [direction, setDirection] =
     useState<GraphDirection>(directionFromQuery);
-  const [selectedRelations, setSelectedRelations] = useState<string[]>([]);
+  const [mergeRelations, setMergeRelations] = useState<boolean>(
+    initialMergeRelations ?? true,
+  );
+  const [selectedRelations, setSelectedRelations] =
+    useState<string[]>(relationsFromQuery);
   const [selectedKinds, setSelectedKinds] = useState<string[]>([]);
 
   const { data, loading, error } = useSpannerGraph({
@@ -171,8 +189,11 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
   });
 
   const mergedEdges = useMemo(
-    () => mergeParallelEdges(data?.edges ?? []),
-    [data?.edges],
+    () =>
+      mergeParallelEdges(data?.edges ?? [], {
+        mergeReciprocal: mergeRelations,
+      }),
+    [data?.edges, mergeRelations],
   );
 
   const dependencyNodes: Array<DependencyGraphTypes.DependencyNode<GraphNode>> =
@@ -314,6 +335,20 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
                     </MenuItem>
                   </Select>
                 </FormControl>
+
+                <FormControlLabel
+                  control={
+                    <Switch
+                      color="primary"
+                      size="small"
+                      checked={mergeRelations}
+                      onChange={event =>
+                        setMergeRelations(event.target.checked)
+                      }
+                    />
+                  }
+                  label="Merge reciprocal relations"
+                />
 
                 <Box>
                   <Typography variant="subtitle2">Relation Types</Typography>

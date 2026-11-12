@@ -13,6 +13,9 @@ import { ReactNode } from 'react';
 import { RouteRef } from '@backstage/core-plugin-api';
 
 // @public
+export const BLAST_RADIUS_RELATIONS: string[];
+
+// @public
 export const EntitySpannerGraphCard: SpannerCatalogGraphCard;
 
 // @public
@@ -53,7 +56,12 @@ export interface GraphNode {
 }
 
 // @public
-export function mergeParallelEdges(edges: GraphEdge[]): GraphEdge[];
+export function mergeParallelEdges(
+  edges: GraphEdge[],
+  options?: {
+    mergeReciprocal?: boolean;
+  },
+): GraphEdge[];
 
 // @public
 export interface NaturalLanguageGraphResponse {
@@ -82,6 +90,8 @@ export interface SpannerCatalogGraphCardProps {
   height?: number;
   // (undocumented)
   maxDepth?: number;
+  // (undocumented)
+  mergeRelations?: boolean;
   // (undocumented)
   relationTypes?: string[];
   // (undocumented)
@@ -132,6 +142,8 @@ export interface SpannerGraphPageProps {
   initialMaxDepth?: number;
   // (undocumented)
   initialRootRef?: string;
+  // (undocumented)
+  mergeRelations?: boolean;
   // (undocumented)
   noHeader?: boolean;
 }
