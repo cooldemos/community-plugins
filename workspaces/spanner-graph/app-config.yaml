@@ -1,0 +1,57 @@
+app:
+  title: Spanner Graph Dev Portal
+  baseUrl: http://0.0.0.0:3000
+
+backend:
+  baseUrl: http://0.0.0.0:7007
+  listen:
+    port: 7007
+    host: 0.0.0.0
+  database:
+    client: better-sqlite3
+    connection: ':memory:'
+  cache:
+    store: memory
+  cors:
+    origin: http://0.0.0.0:3000
+    methods: [GET, HEAD, PATCH, POST, PUT, DELETE]
+    credentials: true
+  csp:
+    connect-src: ["'self'", 'http:', 'https:']
+  reading:
+    allow:
+      - host: localhost
+      - host: 0.0.0.0
+
+auth:
+  providers:
+    guest: {}
+
+catalog:
+  import:
+    entityFilename: catalog-info.yaml
+    pullRequestBranchName: backstage-integration
+  rules:
+    - allow: [Component, System, API, Resource, Domain, Location, Group, User]
+  locations:
+    - type: file
+      target: ../../examples/entities.yaml
+  spannerSync:
+    enabled: true
+    projectId: demo-gcp-project
+    instanceId: backstage-graph-instance
+    databaseId: backstage-catalog
+    autoCreateSchema: true
+    enableEmbeddings: false
+    embeddingModel: TextEmbeddingModel
+    batchSize: 500
+    schedule:
+      frequency: PT2M
+      timeout: PT10M
+
+spannerGraph:
+  projectId: demo-gcp-project
+  instanceId: backstage-graph-instance
+  databaseId: backstage-catalog
+  graphName: BackstageCatalogGraph
+  maxDepth: 5

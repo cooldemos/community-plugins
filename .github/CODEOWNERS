@@ -121,6 +121,7 @@ yarn.lock                                                               @backsta
 /workspaces/servicenow                                                  @backstage/community-plugins-maintainers  @AndrienkoAleksandr @ciiay @PatAKnight @christoph-jerolimov @its-mitesh-kumar @jrichter1 @HusneShabbir @karthikjeeyar @rohitkrai03
 /workspaces/shortcuts                                                   @backstage/community-plugins-maintainers
 /workspaces/sonarqube                                                   @backstage/community-plugins-maintainers
+/workspaces/spanner-graph                                               @backstage/community-plugins-maintainers  @apichick
 /workspaces/splunk                                                      @backstage/community-plugins-maintainers
 /workspaces/stack-overflow                                              @backstage/community-plugins-maintainers
 /workspaces/stackstorm                                                  @backstage/community-plugins-maintainers
