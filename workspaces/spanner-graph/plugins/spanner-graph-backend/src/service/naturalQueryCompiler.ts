@@ -47,10 +47,22 @@ export const NaturalGraphQueryIntentSchema = z.object({
   rootEntityRef: z.string().min(1),
   direction: z.enum(['outgoing', 'incoming', 'both']).default('both'),
   maxDepth: z.number().int().min(1).max(5).default(3),
-  relationTypes: z.array(z.string()).optional(),
-  entityKinds: z.array(z.string()).optional(),
-  lifecycle: z.string().optional(),
-  summaryTemplate: z.string().optional(),
+  relationTypes: z
+    .array(z.enum(ALLOWED_CATALOG_RELATIONS))
+    .nullish()
+    .transform(v => v ?? undefined),
+  entityKinds: z
+    .array(z.string())
+    .nullish()
+    .transform(v => v ?? undefined),
+  lifecycle: z
+    .string()
+    .nullish()
+    .transform(v => v ?? undefined),
+  summaryTemplate: z
+    .string()
+    .nullish()
+    .transform(v => v ?? undefined),
 });
 
 /**
@@ -122,9 +134,54 @@ function rowToPlainObject(row: unknown): Record<string, unknown> {
   return row as Record<string, unknown>;
 }
 
+/** Extracts explicit kind/namespace qualifiers and short name from a partial entity reference. */
+function parseEntityIdentifierQualifiers(trimmed: string): {
+  explicitKind?: string;
+  explicitNamespace?: string;
+  shortName: string;
+} {
+  let explicitKind: string | undefined;
+  let remainder = trimmed;
+  const colonIdx = trimmed.indexOf(':');
+  if (colonIdx !== -1) {
+    const parsedKind = trimmed
+      .slice(0, colonIdx)
+      .trim()
+      .toLocaleLowerCase('en-US');
+    explicitKind = parsedKind || undefined;
+    remainder = trimmed.slice(colonIdx + 1).trim();
+  }
+
+  let explicitNamespace: string | undefined;
+  let shortName = remainder;
+  const slashIdx = remainder.indexOf('/');
+  if (slashIdx !== -1) {
+    const parsedNamespace = remainder
+      .slice(0, slashIdx)
+      .trim()
+      .toLocaleLowerCase('en-US');
+    explicitNamespace = parsedNamespace || undefined;
+    shortName = remainder.slice(slashIdx + 1).trim();
+  }
+
+  return { explicitKind, explicitNamespace, shortName };
+}
+
+/** Extracts the first non-empty `entity_ref` string from a Spanner query result array. */
+function extractFirstEntityRef(rows: unknown): string | undefined {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return undefined;
+  }
+  const plain = rowToPlainObject(rows[0]);
+  return typeof plain.entity_ref === 'string' && plain.entity_ref.trim()
+    ? plain.entity_ref.trim()
+    : undefined;
+}
+
 /**
- * Resolves a short entity name (such as `orders-spanner-db`) or full entity ref against the Spanner
- * `entities` table, falling back to `normalizeEntityRef` when no matching row is returned.
+ * Resolves a short entity name (such as `orders-spanner-db`) or partial entity ref against the
+ * Spanner `entities` table using an exact point seek (`entities` PK + `idx_entities_name`) first
+ * before falling back to a case-insensitive covering index scan and finally `normalizeEntityRef`.
  *
  * @public
  */
@@ -152,30 +209,64 @@ export async function resolveEntityRefInSpanner(
   }
 
   try {
-    const shortName = trimmed.includes('/')
-      ? trimmed.slice(trimmed.lastIndexOf('/') + 1).trim()
-      : trimmed.slice(trimmed.indexOf(':') + 1).trim();
+    const { explicitKind, explicitNamespace, shortName } =
+      parseEntityIdentifierQualifiers(trimmed);
 
-    const [rows] = await database.run({
+    const params: Record<string, unknown> = {
+      shortName,
+      fallbackRef: fallback,
+    };
+    const qualifierClauses: string[] = [];
+    if (explicitKind) {
+      params.explicitKind = explicitKind;
+      qualifierClauses.push('kind = @explicitKind');
+    }
+    if (explicitNamespace) {
+      params.explicitNamespace = explicitNamespace;
+      qualifierClauses.push('namespace = @explicitNamespace');
+    }
+    const qualifierSql =
+      qualifierClauses.length > 0
+        ? `\n          AND ${qualifierClauses.join('\n          AND ')}`
+        : '';
+
+    const [exactRows] = await database.run({
       sql: `
         SELECT entity_ref
-        FROM entities
-        WHERE LOWER(name) = LOWER(@shortName)
-           OR LOWER(entity_ref) = LOWER(@fallbackRef)
+        FROM (
+          SELECT entity_ref, 0 AS priority
+          FROM entities
+          WHERE entity_ref = @fallbackRef
+          UNION ALL
+          SELECT entity_ref, 1 AS priority
+          FROM entities@{FORCE_INDEX=idx_entities_name}
+          WHERE name = @shortName${qualifierSql}
+        )
+        ORDER BY priority, entity_ref
+        LIMIT 1
+      `,
+      params,
+    });
+
+    const exactMatch = extractFirstEntityRef(exactRows);
+    if (exactMatch) {
+      return exactMatch;
+    }
+
+    const [fallbackRows] = await database.run({
+      sql: `
+        SELECT entity_ref
+        FROM entities@{FORCE_INDEX=idx_entities_name}
+        WHERE (LOWER(name) = LOWER(@shortName) OR LOWER(entity_ref) = LOWER(@fallbackRef))${qualifierSql}
         ORDER BY CASE WHEN LOWER(entity_ref) = LOWER(@fallbackRef) THEN 0 ELSE 1 END, entity_ref
         LIMIT 1
       `,
-      params: {
-        shortName,
-        fallbackRef: fallback,
-      },
+      params,
     });
 
-    if (Array.isArray(rows) && rows.length > 0) {
-      const plain = rowToPlainObject(rows[0]);
-      if (typeof plain.entity_ref === 'string' && plain.entity_ref.trim()) {
-        return plain.entity_ref.trim();
-      }
+    const caseInsensitiveMatch = extractFirstEntityRef(fallbackRows);
+    if (caseInsensitiveMatch) {
+      return caseInsensitiveMatch;
     }
   } catch {
     // Gracefully fall back to normalizeEntityRef if the lookup query is unsupported by a test mock.
@@ -193,7 +284,9 @@ export async function resolveEntityRefInSpanner(
 export function compileNaturalGraphQuery(options: {
   graphName: string;
   rootEntityRef: string;
-  intent: NaturalGraphQueryIntent;
+  intent: Omit<NaturalGraphQueryIntent, 'relationTypes'> & {
+    relationTypes?: readonly string[];
+  };
   maxAllowedDepth?: number;
   maxPaths?: number;
 }): {
@@ -269,7 +362,7 @@ export function compileNaturalGraphQuery(options: {
 
   const sql = `GRAPH ${graphName}
 MATCH p = ACYCLIC (start:Entity {entity_ref: @rootRef})${edgePattern}(target:Entity)${targetWhereClause}
-RETURN SAFE_TO_JSON(p) AS path
+RETURN SAFE_TO_JSON(p) AS path, target.entity_ref AS target_ref
 LIMIT @maxPaths`;
 
   return { sql, params, depth };

@@ -38,6 +38,7 @@ import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GraphDirection, GraphEdge, GraphNode } from '../api/types';
 import { useSpannerGraph } from '../hooks/useSpannerGraph';
+import { spannerGraphRouteRef } from '../routes';
 
 /**
  * Props for {@link SpannerCatalogGraphCard}.
@@ -259,6 +260,19 @@ export function useSafeEntityRoute() {
   }) => `/catalog/${namespace ?? 'default'}/${kind}/${name}`;
 }
 
+/** Resolves the Spanner Graph Explorer route ref when mounted (supporting both Legacy and New Frontend System mounts), falling back to `/spanner-graph`. */
+export function useSafeExplorerRoute(): () => string {
+  try {
+    const route = useRouteRef(spannerGraphRouteRef);
+    if (route) {
+      return route;
+    }
+  } catch {
+    // Fallback when spannerGraphRouteRef is not registered in the test or host router.
+  }
+  return () => '/spanner-graph';
+}
+
 /**
  * Interactive Entity Page dependency and blast-radius card powered by Cloud Spanner Graph.
  *
@@ -280,6 +294,7 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
   const { entity } = useEntity();
   const navigate = useNavigate();
   const catalogEntityRoute = useSafeEntityRoute();
+  const explorerRoute = useSafeExplorerRoute();
 
   const rootEntityRef = useMemo(() => stringifyEntityRef(entity), [entity]);
   const initialPreset = useMemo(
@@ -345,11 +360,13 @@ export function SpannerCatalogGraphCard(props: SpannerCatalogGraphCardProps) {
     [mergedEdges],
   );
 
+  const explorerBasePath =
+    explorerRoute().replace(/\/+$/, '') || '/spanner-graph';
   const relationTypesParam =
     activeRelationTypes && activeRelationTypes.length > 0
       ? `&relationTypes=${encodeURIComponent(activeRelationTypes.join(','))}`
       : '';
-  const explorerUrl = `/spanner-graph?root=${encodeURIComponent(
+  const explorerUrl = `${explorerBasePath}?root=${encodeURIComponent(
     rootEntityRef,
   )}&maxDepth=${depth}&direction=${direction}${relationTypesParam}`;
 

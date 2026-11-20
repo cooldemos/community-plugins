@@ -17,7 +17,6 @@ import { compatWrapper } from '@backstage/core-compat-api';
 import {
   ApiBlueprint,
   createFrontendPlugin,
-  createRouteRef,
   discoveryApiRef,
   fetchApiRef,
   PageBlueprint,
@@ -29,13 +28,9 @@ import {
 import { z } from 'zod';
 import { SpannerGraphClient } from './api/SpannerGraphClient';
 import { spannerGraphApiRef } from './api/types';
+import { spannerGraphNewRouteRef } from './routes';
 
-/**
- * New Frontend System route reference for the Cloud Spanner Graph topology explorer page.
- *
- * @alpha
- */
-export const spannerGraphNewRouteRef = createRouteRef();
+export { spannerGraphNewRouteRef };
 
 /**
  * API extension registering `SpannerGraphClient` for `spannerGraphApiRef`.

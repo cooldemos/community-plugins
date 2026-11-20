@@ -48,6 +48,9 @@ describe('naturalQueryCompiler', () => {
     expect(compiled.sql).toContain(
       'WHERE target.kind IN UNNEST(@entityKinds) AND LOWER(target.lifecycle) = @lifecycle',
     );
+    expect(compiled.sql).toContain(
+      'RETURN SAFE_TO_JSON(p) AS path, target.entity_ref AS target_ref',
+    );
     expect(compiled.params).toEqual({
       rootRef: 'resource:default/orders-spanner-db',
       maxPaths: 250,
@@ -55,6 +58,91 @@ describe('naturalQueryCompiler', () => {
       entityKinds: ['component'],
       lifecycle: 'production',
     });
+  });
+
+  it('rejects hallucinated relationTypes and coerces null optional intent fields to undefined', () => {
+    const invalidResult = NaturalGraphQueryIntentSchema.safeParse({
+      rootEntityRef: 'orders-spanner-db',
+      direction: 'incoming',
+      maxDepth: 2,
+      relationTypes: ['dependsOn', 'inventedRelation'],
+    });
+    expect(invalidResult.success).toBe(false);
+
+    const nullableIntent = NaturalGraphQueryIntentSchema.parse({
+      rootEntityRef: 'orders-spanner-db',
+      direction: 'incoming',
+      maxDepth: 2,
+      relationTypes: null,
+      entityKinds: null,
+      lifecycle: null,
+      summaryTemplate: null,
+    });
+    expect(nullableIntent).toEqual({
+      rootEntityRef: 'orders-spanner-db',
+      direction: 'incoming',
+      maxDepth: 2,
+      relationTypes: undefined,
+      entityKinds: undefined,
+      lifecycle: undefined,
+      summaryTemplate: undefined,
+    });
+  });
+
+  it('runs exact point-seek lookup via idx_entities_name preserving qualifiers before case-insensitive fallback', async () => {
+    const mockDbExact = {
+      run: jest
+        .fn()
+        .mockResolvedValueOnce([
+          [{ entity_ref: 'resource:payments/orders-spanner-db' }],
+        ]),
+    };
+
+    const resolvedQualified = await resolveEntityRefInSpanner(
+      mockDbExact,
+      'payments/orders-spanner-db',
+    );
+    expect(resolvedQualified).toBe('resource:payments/orders-spanner-db');
+    expect(mockDbExact.run).toHaveBeenCalledTimes(1);
+    expect(mockDbExact.run.mock.calls[0][0].sql).toContain(
+      'entities@{FORCE_INDEX=idx_entities_name}',
+    );
+    expect(mockDbExact.run.mock.calls[0][0].sql).toContain(
+      'WHERE name = @shortName',
+    );
+    expect(mockDbExact.run.mock.calls[0][0].sql).toContain(
+      'namespace = @explicitNamespace',
+    );
+    expect(mockDbExact.run.mock.calls[0][0].params).toEqual({
+      shortName: 'orders-spanner-db',
+      fallbackRef: 'component:payments/orders-spanner-db',
+      explicitNamespace: 'payments',
+    });
+
+    const mockDbFallback = {
+      run: jest
+        .fn()
+        .mockResolvedValueOnce([[]])
+        .mockResolvedValueOnce([
+          [{ entity_ref: 'resource:default/Orders-Spanner-DB' }],
+        ]),
+    };
+
+    const resolvedCaseInsensitive = await resolveEntityRefInSpanner(
+      mockDbFallback,
+      'resource:orders-spanner-db',
+    );
+    expect(resolvedCaseInsensitive).toBe('resource:default/Orders-Spanner-DB');
+    expect(mockDbFallback.run).toHaveBeenCalledTimes(2);
+    expect(mockDbFallback.run.mock.calls[0][0].sql).toContain(
+      'kind = @explicitKind',
+    );
+    expect(mockDbFallback.run.mock.calls[1][0].sql).toContain(
+      'LOWER(name) = LOWER(@shortName)',
+    );
+    expect(mockDbFallback.run.mock.calls[1][0].sql).toContain(
+      'kind = @explicitKind',
+    );
   });
 
   it('normalizes entity references and resolves short names via Spanner', async () => {

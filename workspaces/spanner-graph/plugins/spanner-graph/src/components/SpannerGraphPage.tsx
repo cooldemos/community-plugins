@@ -183,11 +183,12 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
 
   useEffect(() => {
     const queryRoot = searchParams.get('root');
-    if (queryRoot && queryRoot !== activeRoot) {
-      setRootInput(queryRoot);
-      setActiveRoot(queryRoot);
+    if (!queryRoot) {
+      return;
     }
-  }, [searchParams, activeRoot]);
+    setRootInput(prev => (prev === queryRoot ? prev : queryRoot));
+    setActiveRoot(prev => (prev === queryRoot ? prev : queryRoot));
+  }, [searchParams]);
 
   const { data, loading, error } = useSpannerGraph({
     root: activeRoot,
@@ -451,9 +452,11 @@ export function SpannerGraphPage(props: SpannerGraphPageProps) {
                     zoom="enabled"
                     renderNode={({ node }) => {
                       const fillColor = getKindColor(node.kind ?? 'component');
+                      const resolvedRootRef = (
+                        data?.rootEntityRef ?? activeRoot
+                      ).toLocaleLowerCase('en-US');
                       const isRoot =
-                        node.id.toLocaleLowerCase('en-US') ===
-                        activeRoot.toLocaleLowerCase('en-US');
+                        node.id.toLocaleLowerCase('en-US') === resolvedRootRef;
                       return (
                         <g
                           className={classes.nodeCursor}

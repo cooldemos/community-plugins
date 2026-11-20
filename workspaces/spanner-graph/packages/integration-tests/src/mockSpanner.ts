@@ -32,7 +32,7 @@ function wrapRow(data: Record<string, unknown>): MockJsonRow {
 /**
  * In-memory Cloud Spanner Graph database simulator supporting DDL schema tracking,
  * interleaved `entities` / `relations` mutations, stale entity reconciliation, and
- * multi-hop ISO GQL `MATCH TRAIL` path queries for hermetic integration testing.
+ * multi-hop ISO GQL `MATCH p = ACYCLIC` path queries for hermetic integration testing.
  */
 export class InMemorySpannerDatabase {
   public readonly ddlHistory: string[] = [];
@@ -174,22 +174,42 @@ export class InMemorySpannerDatabase {
       return [found ? [wrapRow({ ...found })] : []];
     }
 
-    if (
-      /FROM\s+entities\s+WHERE\s+LOWER\(name\)\s*=\s*LOWER\(@shortName\)/i.test(
-        sql,
-      )
-    ) {
-      const shortName = String(params.shortName ?? '').toLocaleLowerCase(
-        'en-US',
-      );
-      const fallbackRef = String(params.fallbackRef ?? '').toLocaleLowerCase(
-        'en-US',
-      );
-      const matches = Array.from(this.entities.values()).filter(
-        e =>
-          e.name.toLocaleLowerCase('en-US') === shortName ||
-          e.entity_ref.toLocaleLowerCase('en-US') === fallbackRef,
-      );
+    if (/entities@\{FORCE_INDEX=idx_entities_name\}/i.test(sql)) {
+      const shortName = String(params.shortName ?? '');
+      const fallbackRef = String(params.fallbackRef ?? '');
+      const explicitKind =
+        typeof params.explicitKind === 'string'
+          ? params.explicitKind.toLocaleLowerCase('en-US')
+          : undefined;
+      const explicitNamespace =
+        typeof params.explicitNamespace === 'string'
+          ? params.explicitNamespace.toLocaleLowerCase('en-US')
+          : undefined;
+      const isCaseInsensitive = /LOWER\(name\)/i.test(sql);
+
+      const matches = Array.from(this.entities.values()).filter(e => {
+        if (
+          explicitKind &&
+          e.kind.toLocaleLowerCase('en-US') !== explicitKind
+        ) {
+          return false;
+        }
+        if (
+          explicitNamespace &&
+          e.namespace.toLocaleLowerCase('en-US') !== explicitNamespace
+        ) {
+          return false;
+        }
+        if (isCaseInsensitive) {
+          return (
+            e.name.toLocaleLowerCase('en-US') ===
+              shortName.toLocaleLowerCase('en-US') ||
+            e.entity_ref.toLocaleLowerCase('en-US') ===
+              fallbackRef.toLocaleLowerCase('en-US')
+          );
+        }
+        return e.entity_ref === fallbackRef || e.name === shortName;
+      });
       return [
         matches.length > 0
           ? [wrapRow({ entity_ref: matches[0].entity_ref })]
@@ -197,15 +217,15 @@ export class InMemorySpannerDatabase {
       ];
     }
 
-    if (/MATCH\s+(?:p\s*=\s*)?(?:TRAIL|ACYCLIC)/i.test(sql)) {
-      return [this.evaluateGqlMatchTrail(sql, params)];
+    if (/MATCH\s+(?:p\s*=\s*)?ACYCLIC/i.test(sql)) {
+      return [this.evaluateGqlMatchAcyclic(sql, params)];
     }
 
     return [[]];
   }
 
-  /** Evaluates a parameterized ISO GQL MATCH TRAIL query against the in-memory entities and relations. */
-  private evaluateGqlMatchTrail(
+  /** Evaluates a parameterized ISO GQL `MATCH p = ACYCLIC` query against the in-memory entities and relations. */
+  private evaluateGqlMatchAcyclic(
     sql: string,
     params: Record<string, unknown>,
   ): MockJsonRow[] {
@@ -251,7 +271,7 @@ export class InMemorySpannerDatabase {
     interface QueueItem {
       currentRef: string;
       depth: number;
-      usedEdgeKeys: Set<string>;
+      visitedNodeRefs: Set<string>;
       elements: Array<Record<string, unknown>>;
     }
 
@@ -259,7 +279,7 @@ export class InMemorySpannerDatabase {
       {
         currentRef: rootRef,
         depth: 0,
-        usedEdgeKeys: new Set<string>(),
+        visitedNodeRefs: new Set<string>([rootRef]),
         elements: [
           {
             kind: 'node',
@@ -280,11 +300,6 @@ export class InMemorySpannerDatabase {
           continue;
         }
 
-        const edgeKey = `${edge.source_entity_ref}::${edge.relation_type}::${edge.target_entity_ref}`;
-        if (current.usedEdgeKeys.has(edgeKey)) {
-          continue;
-        }
-
         let nextRef: string | undefined;
         if (
           (direction === 'outgoing' || direction === 'both') &&
@@ -298,7 +313,7 @@ export class InMemorySpannerDatabase {
           nextRef = edge.source_entity_ref;
         }
 
-        if (!nextRef) {
+        if (!nextRef || current.visitedNodeRefs.has(nextRef)) {
           continue;
         }
 
@@ -319,14 +334,19 @@ export class InMemorySpannerDatabase {
           },
         ];
 
-        const nextUsedEdges = new Set(current.usedEdgeKeys);
-        nextUsedEdges.add(edgeKey);
+        const nextVisited = new Set(current.visitedNodeRefs);
+        nextVisited.add(nextRef);
 
         if (
           !kindFilter ||
           kindFilter.has(nextNode.kind.toLocaleLowerCase('en-US'))
         ) {
-          results.push(wrapRow({ path: nextElements }));
+          results.push(
+            wrapRow({
+              path: nextElements,
+              target_ref: nextNode.entity_ref,
+            }),
+          );
           if (results.length >= maxPaths) {
             break;
           }
@@ -335,7 +355,7 @@ export class InMemorySpannerDatabase {
         queue.push({
           currentRef: nextRef,
           depth: current.depth + 1,
-          usedEdgeKeys: nextUsedEdges,
+          visitedNodeRefs: nextVisited,
           elements: nextElements,
         });
       }

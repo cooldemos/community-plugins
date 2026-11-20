@@ -31,7 +31,9 @@ export const ALLOWED_CATALOG_RELATIONS: readonly [
 export function compileNaturalGraphQuery(options: {
   graphName: string;
   rootEntityRef: string;
-  intent: NaturalGraphQueryIntent;
+  intent: Omit<NaturalGraphQueryIntent, 'relationTypes'> & {
+    relationTypes?: readonly string[];
+  };
   maxAllowedDepth?: number;
   maxPaths?: number;
 }): {
@@ -91,10 +93,77 @@ export const NaturalGraphQueryIntentSchema: z.ZodObject<
     rootEntityRef: z.ZodString;
     direction: z.ZodDefault<z.ZodEnum<['outgoing', 'incoming', 'both']>>;
     maxDepth: z.ZodDefault<z.ZodNumber>;
-    relationTypes: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    entityKinds: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    lifecycle: z.ZodOptional<z.ZodString>;
-    summaryTemplate: z.ZodOptional<z.ZodString>;
+    relationTypes: z.ZodEffects<
+      z.ZodOptional<
+        z.ZodNullable<
+          z.ZodArray<
+            z.ZodEnum<
+              [
+                'dependsOn',
+                'dependencyOf',
+                'consumesApi',
+                'apiConsumedBy',
+                'providesApi',
+                'apiProvidedBy',
+                'partOf',
+                'hasPart',
+                'ownedBy',
+                'ownerOf',
+                'childOf',
+                'parentOf',
+              ]
+            >,
+            'many'
+          >
+        >
+      >,
+      | (
+          | 'dependsOn'
+          | 'dependencyOf'
+          | 'ownedBy'
+          | 'ownerOf'
+          | 'consumesApi'
+          | 'apiConsumedBy'
+          | 'providesApi'
+          | 'apiProvidedBy'
+          | 'parentOf'
+          | 'childOf'
+          | 'partOf'
+          | 'hasPart'
+        )[]
+      | undefined,
+      | (
+          | 'dependsOn'
+          | 'dependencyOf'
+          | 'ownedBy'
+          | 'ownerOf'
+          | 'consumesApi'
+          | 'apiConsumedBy'
+          | 'providesApi'
+          | 'apiProvidedBy'
+          | 'parentOf'
+          | 'childOf'
+          | 'partOf'
+          | 'hasPart'
+        )[]
+      | null
+      | undefined
+    >;
+    entityKinds: z.ZodEffects<
+      z.ZodOptional<z.ZodNullable<z.ZodArray<z.ZodString, 'many'>>>,
+      string[] | undefined,
+      string[] | null | undefined
+    >;
+    lifecycle: z.ZodEffects<
+      z.ZodOptional<z.ZodNullable<z.ZodString>>,
+      string | undefined,
+      string | null | undefined
+    >;
+    summaryTemplate: z.ZodEffects<
+      z.ZodOptional<z.ZodNullable<z.ZodString>>,
+      string | undefined,
+      string | null | undefined
+    >;
   },
   'strip',
   z.ZodTypeAny,
@@ -103,18 +172,49 @@ export const NaturalGraphQueryIntentSchema: z.ZodObject<
     maxDepth: number;
     rootEntityRef: string;
     lifecycle?: string | undefined;
-    relationTypes?: string[] | undefined;
+    relationTypes?:
+      | (
+          | 'dependsOn'
+          | 'dependencyOf'
+          | 'ownedBy'
+          | 'ownerOf'
+          | 'consumesApi'
+          | 'apiConsumedBy'
+          | 'providesApi'
+          | 'apiProvidedBy'
+          | 'parentOf'
+          | 'childOf'
+          | 'partOf'
+          | 'hasPart'
+        )[]
+      | undefined;
     entityKinds?: string[] | undefined;
     summaryTemplate?: string | undefined;
   },
   {
     rootEntityRef: string;
     direction?: 'both' | 'outgoing' | 'incoming' | undefined;
-    lifecycle?: string | undefined;
+    lifecycle?: string | null | undefined;
     maxDepth?: number | undefined;
-    relationTypes?: string[] | undefined;
-    entityKinds?: string[] | undefined;
-    summaryTemplate?: string | undefined;
+    relationTypes?:
+      | (
+          | 'dependsOn'
+          | 'dependencyOf'
+          | 'ownedBy'
+          | 'ownerOf'
+          | 'consumesApi'
+          | 'apiConsumedBy'
+          | 'providesApi'
+          | 'apiProvidedBy'
+          | 'parentOf'
+          | 'childOf'
+          | 'partOf'
+          | 'hasPart'
+        )[]
+      | null
+      | undefined;
+    entityKinds?: string[] | null | undefined;
+    summaryTemplate?: string | null | undefined;
   }
 >;
 

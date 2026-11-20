@@ -52,7 +52,7 @@ describe('SpannerGraphPage and SpannerNaturalQueryCard', () => {
 
     const askNaturalLanguage = jest.fn().mockResolvedValue({
       answer: 'Checkout service depends on orders-spanner-db.',
-      executedGql: 'GRAPH BackstageCatalogGraph MATCH TRAIL ...',
+      executedGql: 'GRAPH BackstageCatalogGraph MATCH p = ACYCLIC ...',
       matchedNodes: [
         {
           id: 'resource:default/orders-spanner-db',
@@ -174,5 +174,79 @@ describe('SpannerGraphPage and SpannerNaturalQueryCard', () => {
         /Configure spannerGraph\.aiServiceUrl in app-config\.yaml/i,
       ),
     ).toBeInTheDocument();
+  });
+
+  it('syncs user-submitted short-name roots without reverting to the initial query param and highlights data.rootEntityRef', async () => {
+    const getSubgraph = jest.fn().mockImplementation(async ({ root }) => {
+      if (root === 'orders-spanner-db') {
+        return {
+          rootEntityRef: 'resource:default/orders-spanner-db',
+          depth: 3,
+          nodes: [
+            {
+              id: 'resource:default/orders-spanner-db',
+              kind: 'resource',
+              namespace: 'default',
+              name: 'orders-spanner-db',
+            },
+          ],
+          edges: [],
+          truncated: false,
+          queryDurationMs: 6,
+        };
+      }
+      return {
+        rootEntityRef: 'component:default/checkout-service',
+        depth: 3,
+        nodes: [
+          {
+            id: 'component:default/checkout-service',
+            kind: 'component',
+            namespace: 'default',
+            name: 'checkout-service',
+          },
+        ],
+        edges: [],
+        truncated: false,
+        queryDurationMs: 5,
+      };
+    });
+
+    const mockApi: SpannerGraphApi = {
+      getSubgraph,
+      askNaturalLanguage: jest.fn(),
+    };
+
+    const { container } = await renderInTestApp(
+      <TestApiProvider apis={[[spannerGraphApiRef, mockApi]]}>
+        <SpannerGraphPage />
+      </TestApiProvider>,
+      {
+        routeEntries: [
+          '/spanner-graph?root=component:default/checkout-service',
+        ],
+      },
+    );
+
+    expect(
+      await screen.findByText(
+        'Topology Canvas (component:default/checkout-service)',
+      ),
+    ).toBeInTheDocument();
+
+    const rootInput = screen.getByLabelText('Root Entity Reference');
+    fireEvent.change(rootInput, { target: { value: 'orders-spanner-db' } });
+    fireEvent.click(screen.getByText('Explore Subgraph'));
+
+    expect(
+      await screen.findByText('Topology Canvas (orders-spanner-db)'),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(getSubgraph).toHaveBeenLastCalledWith(
+        expect.objectContaining({ root: 'orders-spanner-db' }),
+      ),
+    );
+    const highlightedRect = container.querySelector('rect[stroke="#ffd54f"]');
+    expect(highlightedRect).not.toBeNull();
   });
 });

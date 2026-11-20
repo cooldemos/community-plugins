@@ -284,16 +284,21 @@ function parseGraphEdge(props: Record<string, unknown>): GraphEdge | undefined {
   };
 }
 
-/** Extracts nodes and edges from Spanner GQL path rows, filtering out any dangling edges. */
+/** Extracts nodes, filtered edges, and projected `target_ref` IDs from Spanner GQL path rows. */
 function extractNodesAndEdgesFromRows(rows: unknown[] | undefined): {
   nodesMap: Map<string, GraphNode>;
   edges: GraphEdge[];
+  targetRefs: Set<string>;
 } {
   const nodesMap = new Map<string, GraphNode>();
   const edgesMap = new Map<string, GraphEdge>();
+  const targetRefs = new Set<string>();
 
   for (const row of rows ?? []) {
     const plainRow = rowToPlainObject(row);
+    if (typeof plainRow.target_ref === 'string' && plainRow.target_ref.trim()) {
+      targetRefs.add(plainRow.target_ref.trim());
+    }
     const elements = unwrapPathElements(plainRow.path);
     for (const element of elements) {
       const props =
@@ -319,7 +324,7 @@ function extractNodesAndEdgesFromRows(rows: unknown[] | undefined): {
     edge => nodesMap.has(edge.from) && nodesMap.has(edge.to),
   );
 
-  return { nodesMap, edges };
+  return { nodesMap, edges, targetRefs };
 }
 
 /** Strips optional markdown code fences around a JSON response from an LLM. */
@@ -533,11 +538,19 @@ LIMIT 1`,
 
     const startTime = Date.now();
     const [rows] = await this.database.run({ sql, params });
-    const { nodesMap, edges } = extractNodesAndEdgesFromRows(rows);
+    const { nodesMap, edges, targetRefs } = extractNodesAndEdgesFromRows(rows);
 
     const allNodes = Array.from(nodesMap.values());
-    const nonRootNodes = allNodes.filter(node => node.id !== resolvedRootRef);
-    const matchedNodes = nonRootNodes.length > 0 ? nonRootNodes : allNodes;
+    let matchedNodes: GraphNode[];
+    if (targetRefs.size > 0) {
+      // Keep matchedNodes strictly to target entities satisfying WHERE filters while preserving intermediate path vertices in subgraph.nodes.
+      matchedNodes = Array.from(targetRefs)
+        .map(ref => nodesMap.get(ref))
+        .filter((node): node is GraphNode => Boolean(node));
+    } else {
+      const nonRootNodes = allNodes.filter(node => node.id !== resolvedRootRef);
+      matchedNodes = nonRootNodes.length > 0 ? nonRootNodes : allNodes;
+    }
 
     const answer = this.formatSynthesizedAnswer(
       resolvedRootRef,
@@ -570,12 +583,22 @@ LIMIT 1`,
       /\/+$/,
       '',
     )}/v1/graph/natural-query`;
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: trimmedQuery }),
-      signal: AbortSignal.timeout(15_000),
-    });
+
+    let response: Response;
+    try {
+      response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: trimmedQuery }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    } catch (error) {
+      throw new ServiceUnavailableError(
+        `AI graph query service request failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     if (!response.ok) {
       this.logger.warn('AI natural query service returned non-OK status', {
@@ -586,8 +609,18 @@ LIMIT 1`,
       );
     }
 
-    const payload =
-      (await response.json()) as Partial<NaturalLanguageGraphResponse>;
+    let payload: Partial<NaturalLanguageGraphResponse>;
+    try {
+      payload =
+        (await response.json()) as Partial<NaturalLanguageGraphResponse>;
+    } catch (error) {
+      throw new ServiceUnavailableError(
+        `AI graph query service returned invalid JSON: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
     return {
       answer: typeof payload.answer === 'string' ? payload.answer : '',
       executedGql:
@@ -604,7 +637,7 @@ LIMIT 1`,
     question: string,
   ): Promise<NaturalGraphQueryIntent> {
     const provider = this.config.llm?.provider ?? 'vertex';
-    const model = this.config.llm?.model ?? 'gemini-3-flash-preview';
+    const configuredModel = this.config.llm?.model?.trim();
 
     let rawJsonText: string;
 
@@ -615,84 +648,132 @@ LIMIT 1`,
           `Natural language graph queries with provider "${provider}" require spannerGraph.llm.baseUrl to be configured.`,
         );
       }
+      if (!configuredModel) {
+        throw new NotImplementedError(
+          `Natural language graph queries with provider "${provider}" require spannerGraph.llm.model to be configured.`,
+        );
+      }
       const apiKey =
-        this.config.llm?.apiKey?.trim() ?? process.env.OPENAI_API_KEY ?? '';
-      const response = await fetch(
-        `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+        this.config.llm?.apiKey?.trim() ||
+        process.env.OPENAI_API_KEY?.trim() ||
+        '';
+
+      let response: Response;
+      try {
+        response = await fetch(
+          `${baseUrl.replace(/\/+$/, '')}/chat/completions`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+            },
+            body: JSON.stringify({
+              model: configuredModel,
+              temperature: 0,
+              response_format: { type: 'json_object' },
+              messages: [
+                { role: 'system', content: NATURAL_QUERY_SYSTEM_PROMPT },
+                { role: 'user', content: question },
+              ],
+            }),
+            signal: AbortSignal.timeout(20_000),
           },
-          body: JSON.stringify({
-            model,
-            temperature: 0,
-            response_format: { type: 'json_object' },
-            messages: [
-              { role: 'system', content: NATURAL_QUERY_SYSTEM_PROMPT },
-              { role: 'user', content: question },
-            ],
-          }),
-          signal: AbortSignal.timeout(20_000),
-        },
-      );
+        );
+      } catch (error) {
+        throw new ServiceUnavailableError(
+          `LLM provider "${provider}" request failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+
       if (!response.ok) {
         throw new ServiceUnavailableError(
           `LLM provider "${provider}" returned HTTP ${response.status}`,
         );
       }
-      const payload = (await response.json()) as {
-        choices?: Array<{ message?: { content?: string } }>;
-      };
+      let payload: { choices?: Array<{ message?: { content?: string } }> };
+      try {
+        payload = (await response.json()) as {
+          choices?: Array<{ message?: { content?: string } }>;
+        };
+      } catch (error) {
+        throw new ServiceUnavailableError(
+          `LLM provider "${provider}" returned invalid JSON response: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
       rawJsonText = payload.choices?.[0]?.message?.content ?? '';
     } else if (provider === 'gemini') {
       const apiKey =
-        this.config.llm?.apiKey?.trim() ?? process.env.GEMINI_API_KEY;
+        this.config.llm?.apiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
       if (!apiKey) {
         throw new NotImplementedError(
           'Natural language graph queries with provider "gemini" require spannerGraph.llm.apiKey to be configured.',
         );
       }
-      const ai = new GoogleGenAI({ apiKey });
-      const result = await ai.models.generateContent({
-        model,
-        contents: question,
-        config: {
-          systemInstruction: NATURAL_QUERY_SYSTEM_PROMPT,
-          temperature: 0,
-          responseMimeType: 'application/json',
-        },
-      });
-      rawJsonText = result.text ?? '';
+      const model = configuredModel || 'gemini-3-flash-preview';
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const result = await ai.models.generateContent({
+          model,
+          contents: question,
+          config: {
+            systemInstruction: NATURAL_QUERY_SYSTEM_PROMPT,
+            temperature: 0,
+            responseMimeType: 'application/json',
+            abortSignal: AbortSignal.timeout(20_000),
+          },
+        });
+        rawJsonText = result.text ?? '';
+      } catch (error) {
+        throw new ServiceUnavailableError(
+          `LLM provider "gemini" request failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     } else {
       const projectId =
-        this.config.projectId ??
-        process.env.GOOGLE_CLOUD_PROJECT ??
-        process.env.GCLOUD_PROJECT;
+        this.config.projectId?.trim() ||
+        process.env.GOOGLE_CLOUD_PROJECT?.trim() ||
+        process.env.GCLOUD_PROJECT?.trim();
       if (!projectId) {
         throw new NotImplementedError(
           'Natural language graph queries require spannerGraph.projectId or spannerGraph.aiServiceUrl to be configured.',
         );
       }
-      const ai = new GoogleGenAI({
-        vertexai: true,
-        project: projectId,
-        location: this.config.llm?.location ?? 'global',
-        googleAuthOptions: {
-          projectId,
-        },
-      });
-      const result = await ai.models.generateContent({
-        model,
-        contents: question,
-        config: {
-          systemInstruction: NATURAL_QUERY_SYSTEM_PROMPT,
-          temperature: 0,
-          responseMimeType: 'application/json',
-        },
-      });
-      rawJsonText = result.text ?? '';
+      const model = configuredModel || 'gemini-3-flash-preview';
+      const location = this.config.llm?.location?.trim() || 'global';
+      try {
+        const ai = new GoogleGenAI({
+          vertexai: true,
+          project: projectId,
+          location,
+          googleAuthOptions: {
+            projectId,
+          },
+        });
+        const result = await ai.models.generateContent({
+          model,
+          contents: question,
+          config: {
+            systemInstruction: NATURAL_QUERY_SYSTEM_PROMPT,
+            temperature: 0,
+            responseMimeType: 'application/json',
+            abortSignal: AbortSignal.timeout(20_000),
+          },
+        });
+        rawJsonText = result.text ?? '';
+      } catch (error) {
+        throw new ServiceUnavailableError(
+          `LLM provider "vertex" request failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     }
 
     let parsedJson: unknown;
@@ -706,7 +787,16 @@ LIMIT 1`,
       );
     }
 
-    return NaturalGraphQueryIntentSchema.parse(parsedJson);
+    const validated = NaturalGraphQueryIntentSchema.safeParse(parsedJson);
+    if (!validated.success) {
+      throw new ServiceUnavailableError(
+        `LLM returned invalid graph query intent: ${validated.error.issues
+          .map(issue => `${issue.path.join('.') || 'root'}: ${issue.message}`)
+          .join('; ')}`,
+      );
+    }
+
+    return validated.data;
   }
 
   /** Formats a deterministic human-readable summary of the matched Cloud Spanner Graph entities. */

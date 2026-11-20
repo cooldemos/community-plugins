@@ -18,6 +18,7 @@ import { EntityProvider } from '@backstage/plugin-catalog-react';
 import { renderInTestApp, TestApiProvider } from '@backstage/test-utils';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { SpannerGraphApi, spannerGraphApiRef } from '../api/types';
+import { spannerGraphRouteRef } from '../routes';
 import {
   BLAST_RADIUS_RELATIONS,
   mergeParallelEdges,
@@ -172,6 +173,40 @@ describe('SpannerCatalogGraphCard', () => {
     expect(truncateNodeLabel('short-name', 20)).toBe('short-name');
     expect(truncateNodeLabel('very-long-microservice-component-name', 20)).toBe(
       'very-long-microserv…',
+    );
+  });
+
+  it('resolves the Open in Spanner Graph Explorer link from a custom mounted route path', async () => {
+    const mockApi: SpannerGraphApi = {
+      getSubgraph: jest.fn().mockResolvedValue({
+        rootEntityRef: 'component:default/checkout-service',
+        depth: 2,
+        nodes: [],
+        edges: [],
+        truncated: false,
+        queryDurationMs: 4,
+      }),
+      askNaturalLanguage: jest.fn(),
+    };
+
+    await renderInTestApp(
+      <TestApiProvider apis={[[spannerGraphApiRef, mockApi]]}>
+        <EntityProvider entity={mockEntity}>
+          <SpannerCatalogGraphCard />
+        </EntityProvider>
+      </TestApiProvider>,
+      {
+        mountedRoutes: {
+          '/catalog-graph': spannerGraphRouteRef,
+        },
+      },
+    );
+
+    const explorerLink = await screen.findByRole('link', {
+      name: /Open in Spanner Graph Explorer/i,
+    });
+    expect(explorerLink.getAttribute('href')).toMatch(
+      /^\/catalog-graph\?root=component%3Adefault%2Fcheckout-service/,
     );
   });
 });

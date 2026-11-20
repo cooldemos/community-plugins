@@ -15,6 +15,10 @@
  */
 import { mockServices } from '@backstage/backend-test-utils';
 import { ConfigReader } from '@backstage/config';
+import {
+  NotImplementedError,
+  ServiceUnavailableError,
+} from '@backstage/errors';
 import { normalizeEntityRef, SpannerGraphService } from './SpannerGraphService';
 
 describe('SpannerGraphService', () => {
@@ -342,5 +346,245 @@ describe('SpannerGraphService', () => {
       }),
     ]);
     expect(result.answer).toContain('component:default/checkout-service');
+  });
+
+  it('throws ServiceUnavailableError when LLM JSON violates NaturalGraphQueryIntentSchema or upstream fetch fails', async () => {
+    const config = new ConfigReader({
+      spannerGraph: {
+        instanceId: 'demo-instance',
+        databaseId: 'demo-db',
+        llm: {
+          provider: 'litellm',
+          baseUrl: 'http://localhost:4000/v1',
+          model: 'gpt-4o-mini',
+        },
+      },
+    });
+    const service = SpannerGraphService.fromConfig(
+      config,
+      mockServices.logger.mock(),
+      { run: jest.fn() },
+    );
+
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                rootEntityRef: 'orders-spanner-db',
+                direction: 'incoming',
+                relationTypes: ['notARealRelation'],
+              }),
+            },
+          },
+        ],
+      }),
+    } as Response);
+
+    await expect(
+      service.executeNaturalQuery('What depends on orders-spanner-db?'),
+    ).rejects.toThrow(ServiceUnavailableError);
+
+    jest
+      .spyOn(global, 'fetch')
+      .mockRejectedValueOnce(new TypeError('fetch failed: ECONNREFUSED'));
+
+    await expect(
+      service.executeNaturalQuery('What depends on orders-spanner-db?'),
+    ).rejects.toThrow(ServiceUnavailableError);
+  });
+
+  it('requires an explicit spannerGraph.llm.model for openai and litellm providers and trims API key env vars', async () => {
+    const missingModelService = SpannerGraphService.fromConfig(
+      new ConfigReader({
+        spannerGraph: {
+          instanceId: 'demo-instance',
+          databaseId: 'demo-db',
+          llm: {
+            provider: 'openai',
+            baseUrl: 'https://api.openai.com/v1',
+          },
+        },
+      }),
+      mockServices.logger.mock(),
+      { run: jest.fn() },
+    );
+
+    await expect(
+      missingModelService.executeNaturalQuery(
+        'What depends on orders-spanner-db?',
+      ),
+    ).rejects.toThrow(NotImplementedError);
+
+    const originalOpenAiKey = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = '  sk-trimmed-key  ';
+    try {
+      const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  rootEntityRef: 'resource:default/orders-spanner-db',
+                  direction: 'incoming',
+                  maxDepth: 2,
+                }),
+              },
+            },
+          ],
+        }),
+      } as Response);
+
+      const validService = SpannerGraphService.fromConfig(
+        new ConfigReader({
+          spannerGraph: {
+            instanceId: 'demo-instance',
+            databaseId: 'demo-db',
+            llm: {
+              provider: 'openai',
+              baseUrl: 'https://api.openai.com/v1',
+              model: 'gpt-4o-mini',
+            },
+          },
+        }),
+        mockServices.logger.mock(),
+        { run: jest.fn().mockResolvedValue([[]]) },
+      );
+
+      await validService.executeNaturalQuery(
+        'What depends on orders-spanner-db?',
+      );
+      expect(fetchSpy).toHaveBeenCalledWith(
+        'https://api.openai.com/v1/chat/completions',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            Authorization: 'Bearer sk-trimmed-key',
+          }),
+        }),
+      );
+    } finally {
+      if (originalOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = originalOpenAiKey;
+      }
+    }
+  });
+
+  it('builds matchedNodes strictly from target_ref while keeping intermediate path nodes in subgraph.nodes', async () => {
+    const run = jest.fn().mockResolvedValueOnce([
+      [
+        {
+          toJSON: () => ({
+            target_ref: 'component:default/web-storefront',
+            path: [
+              {
+                kind: 'node',
+                properties: {
+                  entity_ref: 'resource:default/orders-spanner-db',
+                  kind: 'resource',
+                  namespace: 'default',
+                  name: 'orders-spanner-db',
+                },
+              },
+              {
+                kind: 'edge',
+                properties: {
+                  source_entity_ref: 'component:default/checkout-service',
+                  target_entity_ref: 'resource:default/orders-spanner-db',
+                  relation_type: 'dependsOn',
+                },
+              },
+              {
+                kind: 'node',
+                properties: {
+                  entity_ref: 'component:default/checkout-service',
+                  kind: 'component',
+                  namespace: 'default',
+                  name: 'checkout-service',
+                  lifecycle: 'experimental',
+                },
+              },
+              {
+                kind: 'edge',
+                properties: {
+                  source_entity_ref: 'component:default/web-storefront',
+                  target_entity_ref: 'component:default/checkout-service',
+                  relation_type: 'dependsOn',
+                },
+              },
+              {
+                kind: 'node',
+                properties: {
+                  entity_ref: 'component:default/web-storefront',
+                  kind: 'component',
+                  namespace: 'default',
+                  name: 'web-storefront',
+                  lifecycle: 'production',
+                },
+              },
+            ],
+          }),
+        },
+      ],
+    ]);
+
+    const service = SpannerGraphService.fromConfig(
+      new ConfigReader({
+        spannerGraph: {
+          instanceId: 'demo-instance',
+          databaseId: 'demo-db',
+          llm: {
+            provider: 'litellm',
+            baseUrl: 'http://localhost:4000/v1',
+            model: 'gpt-4o-mini',
+          },
+        },
+      }),
+      mockServices.logger.mock(),
+      { run },
+    );
+
+    jest.spyOn(global, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({
+                rootEntityRef: 'resource:default/orders-spanner-db',
+                direction: 'incoming',
+                maxDepth: 3,
+                entityKinds: ['component'],
+                lifecycle: 'production',
+              }),
+            },
+          },
+        ],
+      }),
+    } as Response);
+
+    const result = await service.executeNaturalQuery(
+      'Which production components depend on resource:default/orders-spanner-db?',
+    );
+
+    expect(result.matchedNodes).toEqual([
+      expect.objectContaining({
+        id: 'component:default/web-storefront',
+        lifecycle: 'production',
+      }),
+    ]);
+    expect(result.subgraph?.nodes.map(node => node.id)).toEqual([
+      'resource:default/orders-spanner-db',
+      'component:default/checkout-service',
+      'component:default/web-storefront',
+    ]);
+    expect(result.subgraph?.edges).toHaveLength(2);
   });
 });
